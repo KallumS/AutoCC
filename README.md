@@ -52,16 +52,57 @@ Each lane sits in its own value range so they don't fight each other:
 | CC1  | 0     | 100–112 | 90–96 | full sweep, 0% up to ~88% |
 | CC11 | 20–30 | 100–110 | 90–100 | ~16% up to ~87% |
 | CC7  | 110–112 | 118–121 | 115 | **stays in an 87–95% band** so volume never drops far |
-| CC21 | 0     | 25      | 21–23 | **peaks at 20%** — deliberately minimal |
+| CC21 | 0     | 25      | 25    | **peaks at 20%** — deliberately minimal |
 
 CC7 only breathes by a few values around 90% — enough to add body on a swell
 without ever pulling the level down. CC21 is capped low because it usually
 drives vibrato or tightness, where a high value is rarely wanted.
 
+### CC21 builds late, then drops away
+
+Vibrato is mostly a late-note gesture, so CC21 is shaped differently from the
+other lanes: a long, heavily curved rise that stays near zero for most of its
+attack, no settle stage (it holds at the top once it arrives), and a very short
+fall.
+
+| Preset | 50% of peak at | 90% of peak at | Back to 10% after note-off |
+|--------|----------------|----------------|-----------------------------|
+| Strings   | 1405 ms | 1730 ms | 140 ms |
+| Brass     |  685 ms |  860 ms | 115 ms |
+| Woodwinds |  610 ms |  765 ms | 100 ms |
+| Default   |  840 ms | 1055 ms | 125 ms |
+
+The practical effect is that note length decides how much vibrato you get,
+without you doing anything:
+
+| Held note (Strings) | CC21 reaches |
+|---------------------|--------------|
+| 250 ms  | 0.1%  |
+| 500 ms  | 0.5%  |
+| 1000 ms | 3.8%  |
+| 2000 ms | 20% (full) |
+
+Short runs stay dry, long notes bloom into vibrato near the end, and it clears
+almost immediately on release.
+
 Plus three **free lanes** (5–7). Pick any CC number `0–127` and draw whatever
 curve you want. They start blank.
 
-Any lane can be switched off with the green toggle at the left of its row.
+### Turning lanes off
+
+Any lane can be switched off individually, either with the green toggle at the
+left of its row in the GUI or with its own slider (**Lane 1–7**, sliders 11–17).
+Both are the same control, so the toggle and the slider always agree, and
+because it is a real parameter it can be automated and is saved with the
+project and with presets.
+
+When you mute a lane, AutoCC sends its floor value once and then stops
+transmitting on that CC entirely — so the lane is left at a known resting value
+rather than frozen wherever the envelope happened to be, and the CC is free for
+you to write by hand.
+
+Lane enables are deliberately **not** part of the instrument presets: switching
+from Strings to Brass will never turn a lane back on behind your back.
 
 ---
 
@@ -129,6 +170,9 @@ Drawing is available on **all** lanes, fixed and free alike.
 | **Brass**     | Fast attack with a bloom above sustain (~130 ms), firm sustain, moderate fall (~420 ms) |
 | **Woodwinds** | Quick speech-like attack (~150 ms), steady sustain, quick fall (~220 ms) |
 
+CC21 follows the same family character but on its own much longer timescale —
+see *CC21 builds late* above.
+
 Preset buttons only rewrite the four fixed lanes, so custom lanes you have
 built survive while you audition instruments.
 
@@ -158,8 +202,9 @@ be exported and shared as `.rpl` banks like any other REAPER preset.
 | CC Update Interval (ms) | Resolution of the generated CC stream (default 5 ms)     |
 | Pass Through MIDI       | Forward the incoming notes (leave on unless AutoCC feeds another instance) |
 | CC Engine               | Active / Bypassed                                        |
+| Lane 1–7 (sliders 11–17)| Per-lane on/off, mirrored by the GUI toggles             |
 
-All ten are automatable from the track's envelope lanes.
+All seventeen are automatable from the track's envelope lanes.
 
 ---
 
@@ -180,6 +225,9 @@ All ten are automatable from the track's envelope lanes.
 * `CC120` (all sound off) and `CC123` (all notes off) reset the note state.
 * Idle floor values are sent once when the effect starts so the library is
   initialised before the first note.
+* Muting a lane queues a single floor value that is flushed on the next audio
+  block (MIDI cannot be sent from the parameter-change handler). Loading a
+  project where a lane was already off does not trigger that flush.
 
 ---
 

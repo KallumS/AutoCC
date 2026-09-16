@@ -22,6 +22,13 @@ slider7:1<0,1,1{No,Yes}>Sustain Pedal Holds Envelope
 slider8:5<1,30,1>CC Update Interval (ms)
 slider9:1<0,1,1{No,Yes}>Pass Through MIDI
 slider10:0<0,1,1{Active,Bypassed}>CC Engine
+slider11:1<0,1,1{Off,On}>Lane 1 - CC1 Dynamics
+slider12:1<0,1,1{Off,On}>Lane 2 - CC11 Expression
+slider13:1<0,1,1{Off,On}>Lane 3 - CC7 Volume
+slider14:1<0,1,1{Off,On}>Lane 4 - CC21 Aux / Vibrato
+slider15:0<0,1,1{Off,On}>Lane 5 - User 1
+slider16:0<0,1,1{Off,On}>Lane 6 - User 2
+slider17:0<0,1,1{Off,On}>Lane 7 - User 3
 
 @init
 
@@ -51,6 +58,7 @@ r_start = 224;
 r_relst = 240;
 r_last  = 256;
 r_vsc   = 272;
+r_pndoff = 288;   // lane was just switched off -> send its floor once
 
 // ---- curve tables
 ca_base = 512;    // NSLOTS*CN = 231
@@ -88,8 +96,9 @@ function curve_at(base, s, p) local(x, i0, f) (
   );
 );
 
-function setslot(s, en, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
-  s_en[s]    = en;
+// Lane enable lives on sliders 11-17, not in the preset, so switching
+// instruments never silently turns a lane the user muted back on.
+function setslot(s, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
   s_cc[s]    = cc;
   s_floor[s] = fl;
   s_peak[s]  = pk;
@@ -110,33 +119,51 @@ function setslot(s, en, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
 function load_preset(p) (
   p == 1 ? (
     // Strings: slow swelling rise, settled sustain, long gentle fall
-    setslot(0, 1,  1,   0, 102,  92,  900, 400, 1100, 35, 2.00, 1.25);
-    setslot(1, 1, 11,  25, 105,  98,  700, 300,  900, 25, 1.70, 1.20);
-    setslot(2, 1,  7, 111, 119, 115,  650, 350,  800,  0, 1.60, 1.15);
-    setslot(3, 1, 21,   0,  25,  23, 1200, 500, 1300, 20, 2.20, 1.30);
+    setslot(0,  1,   0, 102,  92,  900, 400, 1100, 35, 2.00, 1.25);
+    setslot(1, 11,  25, 105,  98,  700, 300,  900, 25, 1.70, 1.20);
+    setslot(2,  7, 111, 119, 115,  650, 350,  800,  0, 1.60, 1.15);
+    setslot(3, 21,   0,  25,  25, 1800,   0,  180, 20, 2.80, 0.45);
   ) : p == 2 ? (
     // Brass: fast attack with a bloom, firm sustain, moderate fall
-    setslot(0, 1,  1,   0, 112,  96,  130, 220,  420, 55, 0.55, 0.85);
-    setslot(1, 1, 11,  30, 110, 100,  100, 180,  380, 40, 0.50, 0.85);
-    setslot(2, 1,  7, 110, 121, 115,  120, 200,  400,  0, 0.55, 0.85);
-    setslot(3, 1, 21,   0,  25,  21,  180, 260,  450, 25, 0.60, 0.90);
+    setslot(0,  1,   0, 112,  96,  130, 220,  420, 55, 0.55, 0.85);
+    setslot(1, 11,  30, 110, 100,  100, 180,  380, 40, 0.50, 0.85);
+    setslot(2,  7, 110, 121, 115,  120, 200,  400,  0, 0.55, 0.85);
+    setslot(3, 21,   0,  25,  25,  900,   0,  150, 25, 2.60, 0.45);
   ) : p == 3 ? (
     // Woodwinds: quick speech-like attack, steady sustain, quick fall
-    setslot(0, 1,  1,   0, 106,  94,  150, 160,  220, 45, 0.60, 0.70);
-    setslot(1, 1, 11,  30, 105,  99,  120, 140,  200, 35, 0.55, 0.70);
-    setslot(2, 1,  7, 112, 119, 115,  140, 150,  210,  0, 0.60, 0.70);
-    setslot(3, 1, 21,   0,  25,  22,  200, 200,  260, 20, 0.70, 0.75);
+    setslot(0,  1,   0, 106,  94,  150, 160,  220, 45, 0.60, 0.70);
+    setslot(1, 11,  30, 105,  99,  120, 140,  200, 35, 0.55, 0.70);
+    setslot(2,  7, 112, 119, 115,  140, 150,  210,  0, 0.60, 0.70);
+    setslot(3, 21,   0,  25,  25,  800,   0,  130, 20, 2.60, 0.45);
   ) : (
     // Default: neutral, usable on anything
-    setslot(0, 1,  1,   0, 100,  90,  250, 200,  400, 40, 1.00, 1.00);
-    setslot(1, 1, 11,  20, 100,  95,  200, 150,  350, 30, 1.00, 1.00);
-    setslot(2, 1,  7, 112, 118, 115,  220, 180,  360,  0, 1.00, 1.00);
-    setslot(3, 1, 21,   0,  25,  22,  400, 250,  500, 20, 1.20, 1.10);
+    setslot(0,  1,   0, 100,  90,  250, 200,  400, 40, 1.00, 1.00);
+    setslot(1, 11,  20, 100,  95,  200, 150,  350, 30, 1.00, 1.00);
+    setslot(2,  7, 112, 118, 115,  220, 180,  360,  0, 1.00, 1.00);
+    setslot(3, 21,   0,  25,  25, 1100,   0,  160, 20, 2.60, 0.45);
   );
 );
 
 function clear_slot(s) (
-  setslot(s, 0, -1, 0, 100, 90, 250, 200, 400, 40, 1.00, 1.00);
+  setslot(s, -1, 0, 100, 90, 250, 200, 400, 40, 1.00, 1.00);
+);
+
+// Mute a lane from anywhere; the floor value is flushed on the next block so
+// the library is never left parked at whatever the lane last sent.
+function sync_en(s, v) (
+  (en_primed && s_en[s] && !v) ? r_pndoff[s] = 1;
+  s_en[s] = v;
+);
+
+function set_en(s, v) (
+  sync_en(s, v);
+  s == 0 ? ( slider11 = v; sliderchange(slider11); ) :
+  s == 1 ? ( slider12 = v; sliderchange(slider12); ) :
+  s == 2 ? ( slider13 = v; sliderchange(slider13); ) :
+  s == 3 ? ( slider14 = v; sliderchange(slider14); ) :
+  s == 4 ? ( slider15 = v; sliderchange(slider15); ) :
+  s == 5 ? ( slider16 = v; sliderchange(slider16); ) :
+           ( slider17 = v; sliderchange(slider17); );
 );
 
 function reset_runtime() local(i) (
@@ -149,6 +176,7 @@ function reset_runtime() local(i) (
     r_relst[i] = s_floor[i];
     r_last[i]  = -1;
     r_vsc[i]   = 1;
+    r_pndoff[i] = 0;
     i += 1;
   );
   i = 0;
@@ -285,6 +313,20 @@ function handle_event(off, m1, m2, m3) local(st, ch) (
   );
 );
 
+function flush_off() local(i) (
+  i = 0;
+  while (i < NSLOTS) (
+    r_pndoff[i] ? (
+      r_pndoff[i] = 0;
+      (s_cc[i] >= 0 && s_cc[i] <= 127) ? ( r_last[i] = -1; emit(0, i, s_floor[i]); );
+      r_stage[i] = 0;
+      r_t[i]     = 0;
+      r_val[i]   = s_floor[i];
+    );
+    i += 1;
+  );
+);
+
 function send_idle() local(i) (
   i = 0;
   while (i < NSLOTS) (
@@ -296,6 +338,9 @@ function send_idle() local(i) (
 // ---------------------------------------------------------------- first init
 init_done ? 0 : (
   load_preset(0);
+  s_en[0] = 1; s_en[1] = 1; s_en[2] = 1; s_en[3] = 1;
+  s_en[4] = 0; s_en[5] = 0; s_en[6] = 0;
+  en_primed = 0;
   clear_slot(4);
   clear_slot(5);
   clear_slot(6);
@@ -329,9 +374,19 @@ step_samples = max(8, floor(srate * slider8 * 0.001));
 pass_thru    = slider9;
 engine_on    = slider10 == 0;
 
+sync_en(0, slider11 >= 0.5);
+sync_en(1, slider12 >= 0.5);
+sync_en(2, slider13 >= 0.5);
+sync_en(3, slider14 >= 0.5);
+sync_en(4, slider15 >= 0.5);
+sync_en(5, slider16 >= 0.5);
+sync_en(6, slider17 >= 0.5);
+en_primed = 1;
+
 @block
 
 !primed ? ( primed = 1; engine_on ? send_idle(); );
+engine_on ? flush_off();
 
 nev = 0;
 while (midirecv(mo, m1, m2, m3)) (
@@ -533,7 +588,7 @@ while (i < NSLOTS) (
   // enable toggle
   ex = lx0 + 12; ey = ry + 9;
   ehot = mouse_x >= ex && mouse_x < ex + 16 && mouse_y >= ey && mouse_y < ey + 16;
-  (ehot && click) ? ( s_en[i] = !s_en[i]; sel_slot = i; mark_custom(); );
+  (ehot && click) ? ( set_en(i, !s_en[i]); sel_slot = i; );
   s_en[i] ? setc(0.25, 0.72, 0.45) : setc(0.22, 0.23, 0.26);
   gfx_rect(ex, ey, 16, 16, 1);
   setc(0.40, 0.42, 0.47);
@@ -743,7 +798,7 @@ btn(lx0 + 126, uy, 120, 26, "Copy Shape To All", 0) ? (
   mark_custom();
 );
 sel >= 4 ? (
-  btn(lx0 + 252, uy, 100, 26, "Clear Lane", 0) ? ( clear_slot(sel); mark_custom(); );
+  btn(lx0 + 252, uy, 100, 26, "Clear Lane", 0) ? ( clear_slot(sel); set_en(sel, 0); mark_custom(); );
 );
 btn(gfx_w - 132, uy, 120, 26, "Panic / Reset", 0) ? ( all_notes_off(); reset_runtime(); );
 
@@ -753,7 +808,7 @@ setc(0.42, 0.45, 0.50);
 gfx_x = lx0; gfx_y = uy + 36;
 gfx_drawstr("CC1 / CC11 / CC7 / CC21 are fixed lanes. Lanes 5-7 are yours: set a CC number, then draw its curve.");
 gfx_x = lx0; gfx_y = uy + 52;
-gfx_drawstr("Drag any field to edit (hold Ctrl for fine). Save your own presets with the FX window's + button - curves are stored with them.");
+gfx_drawstr("Green box mutes a lane (also on sliders 11-17). Drag any field to edit, Ctrl for fine. Save presets with the FX window's + button.");
 gfx_setfont(1);
 
 last_cap = mouse_cap;
