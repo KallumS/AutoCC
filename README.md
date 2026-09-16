@@ -157,6 +157,30 @@ curve.
 *Copy Shape To All* pushes the selected lane's timings and drawn curves onto
 every other lane.
 
+### Undo / redo
+
+**Undo** and **Redo** buttons sit at the left of the action row, with
+**Ctrl+Z** / **Ctrl+Y** as shortcuts while the plugin window has focus. History
+is 32 steps deep and covers everything you can change in the GUI: every
+parameter field, every drawn curve, lane mutes, preset button clicks, *Reset
+Curves*, *Copy Shape To All* and *Clear Lane*.
+
+A drag is one history step, not one per frame — the state is staged when you
+press the mouse and only committed once a value actually moves, so clicking a
+field without dragging it leaves nothing on the stack. Making a new edit after
+undoing clears the redo stack, as you would expect.
+
+This is AutoCC's own history, not REAPER's. REAPER's undo only tracks slider
+values; the drawn curves live in the effect's serialized state, which REAPER
+does not snapshot per edit — so the plugin has to keep its own. Two consequences
+worth knowing:
+
+* History is per-instance and is **not** saved with the project. Reloading a
+  project starts with an empty history (you can't undo into the state a previous
+  session was in).
+* Some REAPER configurations grab **Ctrl+Z** before the plugin window sees it.
+  If the shortcut appears to do nothing, use the buttons — they always work.
+
 Drawing is available on **all** lanes, fixed and free alike.
 
 ---
@@ -228,6 +252,10 @@ All seventeen are automatable from the track's envelope lanes.
 * Muting a lane queues a single floor value that is flushed on the next audio
   block (MIDI cannot be sent from the parameter-change handler). Loading a
   project where a lane was already off does not trigger that flush.
+* An undo snapshot is the preset selector plus every lane parameter plus both
+  curve tables — 639 words, held in two 32-entry ring buffers. Restoring one
+  pushes the lane enables back out to their sliders so the GUI, the sliders and
+  the engine cannot drift apart.
 
 ---
 

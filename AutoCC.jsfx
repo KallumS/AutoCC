@@ -59,6 +59,7 @@ r_relst = 240;
 r_last  = 256;
 r_vsc   = 272;
 r_pndoff = 288;   // lane was just switched off -> send its floor once
+r_preven = 304;   // enables as they were before an undo restore
 
 // ---- curve tables
 ca_base = 512;    // NSLOTS*CN = 231
@@ -67,6 +68,16 @@ cr_base = 800;
 notes_base = 1200;   // 128 note-held flags
 ev_base    = 2048;   // MIDI event queue, 4 words each
 EV_MAX     = 2048;
+
+// ---- undo / redo history
+// REAPER's own undo only covers slider values, not the @serialize blob where
+// the drawn curves live, so AutoCC keeps its own history. One snapshot is the
+// preset selector + every lane parameter + both curve tables = 639 words.
+U_MAX      = 32;
+SNAP_W     = 640;
+stage_base = 16384;                        // gesture staging buffer
+u_base     = 17408;                        // undo stack
+rd_base    = 38912;                        // redo stack
 
 ser_ver = SER_V;
 
@@ -165,6 +176,87 @@ function set_en(s, v) (
   s == 5 ? ( slider16 = v; sliderchange(slider16); ) :
            ( slider17 = v; sliderchange(slider17); );
 );
+
+function snap_write(addr) (
+  addr[0] = slider1;
+  memcpy(addr + 1,                          0,       PARAM_LEN);
+  memcpy(addr + 1 + PARAM_LEN,              ca_base, NSLOTS * CN);
+  memcpy(addr + 1 + PARAM_LEN + NSLOTS * CN, cr_base, NSLOTS * CN);
+);
+
+function snap_read(addr) local(i, want) (
+  // remember the live enables: the memcpy below overwrites s_en, and sync_en
+  // needs the before/after pair to know a lane just went quiet.
+  i = 0;
+  while (i < NSLOTS) ( r_preven[i] = s_en[i]; i += 1; );
+
+  slider1     = addr[0];
+  last_preset = slider1;          // stop @slider re-loading over the restore
+  sliderchange(slider1);
+
+  memcpy(0,       addr + 1,                           PARAM_LEN);
+  memcpy(ca_base, addr + 1 + PARAM_LEN,               NSLOTS * CN);
+  memcpy(cr_base, addr + 1 + PARAM_LEN + NSLOTS * CN, NSLOTS * CN);
+
+  i = 0;
+  while (i < NSLOTS) (
+    want      = s_en[i];
+    s_en[i]   = r_preven[i];
+    set_en(i, want);              // pushes the restored enable back to its slider
+    r_last[i] = -1;               // force a resend at the restored values
+    i += 1;
+  );
+);
+
+function hist_push(base, n) (
+  n >= U_MAX ? ( memcpy(base, base + SNAP_W, (U_MAX - 1) * SNAP_W); n = U_MAX - 1; );
+  n;
+);
+
+// Instantaneous edits (buttons, toggles): snapshot the state we are leaving.
+function push_undo() (
+  u_n = hist_push(u_base, u_n);
+  snap_write(u_base + u_n * SNAP_W);
+  u_n += 1;
+  rd_n = 0;
+  stage_armed = 0;
+);
+
+// Drags: stage at mouse-down, commit only once the value actually moves, so a
+// click that changes nothing never lands on the stack.
+function arm_undo() ( snap_write(stage_base); stage_armed = 1; );
+
+function commit_undo() (
+  stage_armed ? (
+    stage_armed = 0;
+    u_n = hist_push(u_base, u_n);
+    memcpy(u_base + u_n * SNAP_W, stage_base, SNAP_W);
+    u_n += 1;
+    rd_n = 0;
+  );
+);
+
+function do_undo() (
+  u_n > 0 ? (
+    rd_n = hist_push(rd_base, rd_n);
+    snap_write(rd_base + rd_n * SNAP_W);
+    rd_n += 1;
+    u_n -= 1;
+    snap_read(u_base + u_n * SNAP_W);
+  );
+);
+
+function do_redo() (
+  rd_n > 0 ? (
+    u_n = hist_push(u_base, u_n);
+    snap_write(u_base + u_n * SNAP_W);
+    u_n += 1;
+    rd_n -= 1;
+    snap_read(rd_base + rd_n * SNAP_W);
+  );
+);
+
+function hist_clear() ( u_n = 0; rd_n = 0; stage_armed = 0; );
 
 function reset_runtime() local(i) (
   i = 0;
@@ -341,6 +433,7 @@ init_done ? 0 : (
   s_en[0] = 1; s_en[1] = 1; s_en[2] = 1; s_en[3] = 1;
   s_en[4] = 0; s_en[5] = 0; s_en[6] = 0;
   en_primed = 0;
+  hist_clear();
   clear_slot(4);
   clear_slot(5);
   clear_slot(6);
@@ -425,6 +518,7 @@ file_mem(0, cr_base, NSLOTS * CN);
   0;              // writing
 ) : (
   reset_runtime();
+  hist_clear();                  // never undo into the previous project's state
   last_preset = slider1;
 );
 
@@ -460,6 +554,20 @@ function btn(x, y, w, h, label, active) local(hot, hit) (
   hit;
 );
 
+// Like btn() but greys out and stops responding when there is nothing to do.
+function ubtn(x, y, w, h, label, avail) local(hot, hit) (
+  hot = avail && mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+  hot ? setc(0.26, 0.28, 0.33) : setc(0.17, 0.18, 0.21);
+  gfx_rect(x, y, w, h, 1);
+  avail ? setc(0.34, 0.36, 0.41) : setc(0.24, 0.25, 0.29);
+  gfx_rect(x, y, w, h, 0);
+  avail ? setc(0.80, 0.83, 0.88) : setc(0.33, 0.35, 0.39);
+  gfx_x = x; gfx_y = y;
+  gfx_drawstr(label, 1 | 4, x + w, y + h);
+  hit = hot && click;
+  hit;
+);
+
 function fmtval(kind, v) (
   kind == 1 ? sprintf(#g, "%d ms", v) :
   kind == 2 ? sprintf(#g, "%d %%",  v) :
@@ -472,7 +580,7 @@ function fmtval(kind, v) (
 function field(id, x, y, w, h, label, val, vmn, vmx, kind, editable)
               local(hot, nv, d) (
   hot = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
-  (editable && hot && click) ? ( drag_id = id; drag_y = mouse_y; drag_v = val; );
+  (editable && hot && click) ? ( drag_id = id; drag_y = mouse_y; drag_v = val; arm_undo(); );
   nv = val;
   (editable && drag_id == id && (mouse_cap & 1)) ? (
     d = (drag_y - mouse_y) * (vmx - vmn) / 150;
@@ -520,7 +628,12 @@ function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) 
 
 // ---------------------------------------------------------------- frame setup
 click  = (mouse_cap & 1) && !(last_cap & 1);
-!(mouse_cap & 1) ? ( drag_id = 0; draw_ci = -1; );
+!(mouse_cap & 1) ? ( drag_id = 0; draw_ci = -1; stage_armed = 0; );
+
+// Ctrl+Z / Ctrl+Y while the plugin window has focus
+while ((kc = gfx_getchar()) > 0) (
+  kc == 26 ? do_undo() : kc == 25 ? do_redo();
+);
 
 gfx_setfont(1, "Arial", 15);
 gfx_setfont(2, "Arial", 11);
@@ -548,10 +661,10 @@ gfx_drawstr("play with both hands - the CCs write themselves");
 
 gfx_setfont(1);
 bw = 88; bh = 26; by = 10; bx = 250;
-btn(bx,            by, bw, bh, "Default",   slider1 == 0) ? ( slider1 = 0; last_preset = 0; load_preset(0); sliderchange(slider1); );
-btn(bx + 94,       by, bw, bh, "Strings",   slider1 == 1) ? ( slider1 = 1; last_preset = 1; load_preset(1); sliderchange(slider1); );
-btn(bx + 188,      by, bw, bh, "Brass",     slider1 == 2) ? ( slider1 = 2; last_preset = 2; load_preset(2); sliderchange(slider1); );
-btn(bx + 282,      by, bw, bh, "Woodwinds", slider1 == 3) ? ( slider1 = 3; last_preset = 3; load_preset(3); sliderchange(slider1); );
+btn(bx,            by, bw, bh, "Default",   slider1 == 0) ? ( push_undo(); slider1 = 0; last_preset = 0; load_preset(0); sliderchange(slider1); );
+btn(bx + 94,       by, bw, bh, "Strings",   slider1 == 1) ? ( push_undo(); slider1 = 1; last_preset = 1; load_preset(1); sliderchange(slider1); );
+btn(bx + 188,      by, bw, bh, "Brass",     slider1 == 2) ? ( push_undo(); slider1 = 2; last_preset = 2; load_preset(2); sliderchange(slider1); );
+btn(bx + 282,      by, bw, bh, "Woodwinds", slider1 == 3) ? ( push_undo(); slider1 = 3; last_preset = 3; load_preset(3); sliderchange(slider1); );
 
 slider1 == 4 ? (
   setc(0.85, 0.65, 0.25);
@@ -588,7 +701,7 @@ while (i < NSLOTS) (
   // enable toggle
   ex = lx0 + 12; ey = ry + 9;
   ehot = mouse_x >= ex && mouse_x < ex + 16 && mouse_y >= ey && mouse_y < ey + 16;
-  (ehot && click) ? ( set_en(i, !s_en[i]); sel_slot = i; );
+  (ehot && click) ? ( push_undo(); set_en(i, !s_en[i]); sel_slot = i; );
   s_en[i] ? setc(0.25, 0.72, 0.45) : setc(0.22, 0.23, 0.26);
   gfx_rect(ex, ey, 16, 16, 1);
   setc(0.40, 0.42, 0.47);
@@ -688,7 +801,7 @@ gfx_line(cx, fy, cx + cw, fy);
 
 // ---- drawing interaction
 inside = mouse_x >= cx && mouse_x < cx + cw && mouse_y >= cy - 6 && mouse_y < cy + chh + 6;
-(inside && click && drag_id == 0) ? ( drag_id = 20; draw_ci = -1; );
+(inside && click && drag_id == 0) ? ( drag_id = 20; draw_ci = -1; arm_undo(); );
 
 (drag_id == 20 && (mouse_cap & 1)) ? (
   mval = clampv((1 - (mouse_y - cy) / chh) * 127, 0, 127);
@@ -720,6 +833,7 @@ inside = mouse_x >= cx && mouse_x < cx + cw && mouse_y >= cy - 6 && mouse_y < cy
     tb[sel * CN] = 0;
     tb[sel * CN + CN - 1] = 1;
     draw_ci = ci; draw_reg = reg; draw_val = nrm;
+    commit_undo();
     mark_custom();
   );
 );
@@ -763,24 +877,29 @@ fgap = 6; fw = floor((gfx_w - 24 - fgap * 4) / 5); fh = 46;
 fy1 = ly0 + 308; fy2 = fy1 + fh + 6;
 
 fx = lx0;
-field(10, fx, fy1, fw, fh, "CC NUMBER", s_cc[sel], -1, 127, 4, sel >= 4) ? ( s_cc[sel] = fld_val; r_last[sel] = -1; mark_custom(); );
-field(1, fx + (fw + fgap),     fy1, fw, fh, "FLOOR",   s_floor[sel], 0, 127, 0, 1) ? ( s_floor[sel] = fld_val; mark_custom(); );
-field(2, fx + (fw + fgap) * 2, fy1, fw, fh, "PEAK",    s_peak[sel],  0, 127, 0, 1) ? ( s_peak[sel]  = fld_val; mark_custom(); );
-field(3, fx + (fw + fgap) * 3, fy1, fw, fh, "SUSTAIN", s_sus[sel],   0, 127, 0, 1) ? ( s_sus[sel]   = fld_val; mark_custom(); );
-field(4, fx + (fw + fgap) * 4, fy1, fw, fh, "VELOCITY",s_vel[sel],   0, 100, 2, 1) ? ( s_vel[sel]   = fld_val; mark_custom(); );
+field(10, fx, fy1, fw, fh, "CC NUMBER", s_cc[sel], -1, 127, 4, sel >= 4) ? ( commit_undo(); s_cc[sel] = fld_val; r_last[sel] = -1; mark_custom(); );
+field(1, fx + (fw + fgap),     fy1, fw, fh, "FLOOR",   s_floor[sel], 0, 127, 0, 1) ? ( commit_undo(); s_floor[sel] = fld_val; mark_custom(); );
+field(2, fx + (fw + fgap) * 2, fy1, fw, fh, "PEAK",    s_peak[sel],  0, 127, 0, 1) ? ( commit_undo(); s_peak[sel]  = fld_val; mark_custom(); );
+field(3, fx + (fw + fgap) * 3, fy1, fw, fh, "SUSTAIN", s_sus[sel],   0, 127, 0, 1) ? ( commit_undo(); s_sus[sel]   = fld_val; mark_custom(); );
+field(4, fx + (fw + fgap) * 4, fy1, fw, fh, "VELOCITY",s_vel[sel],   0, 100, 2, 1) ? ( commit_undo(); s_vel[sel]   = fld_val; mark_custom(); );
 
-field(5, fx,                   fy2, fw, fh, "RISE",    s_atk[sel], 0, 8000, 1, 1) ? ( s_atk[sel] = fld_val; mark_custom(); );
-field(6, fx + (fw + fgap),     fy2, fw, fh, "SETTLE",  s_dcy[sel], 0, 8000, 1, 1) ? ( s_dcy[sel] = fld_val; mark_custom(); );
-field(7, fx + (fw + fgap) * 2, fy2, fw, fh, "FALL",    s_rel[sel], 0, 8000, 1, 1) ? ( s_rel[sel] = fld_val; mark_custom(); );
-field(8, fx + (fw + fgap) * 3, fy2, fw, fh, "RISE SHAPE", s_aexp[sel], 0.10, 6, 3, 1) ? ( s_aexp[sel] = fld_val; mkcurve(ca_base, sel, fld_val); mark_custom(); );
-field(9, fx + (fw + fgap) * 4, fy2, fw, fh, "FALL SHAPE", s_rexp[sel], 0.10, 6, 3, 1) ? ( s_rexp[sel] = fld_val; mkcurve(cr_base, sel, fld_val); mark_custom(); );
+field(5, fx,                   fy2, fw, fh, "RISE",    s_atk[sel], 0, 8000, 1, 1) ? ( commit_undo(); s_atk[sel] = fld_val; mark_custom(); );
+field(6, fx + (fw + fgap),     fy2, fw, fh, "SETTLE",  s_dcy[sel], 0, 8000, 1, 1) ? ( commit_undo(); s_dcy[sel] = fld_val; mark_custom(); );
+field(7, fx + (fw + fgap) * 2, fy2, fw, fh, "FALL",    s_rel[sel], 0, 8000, 1, 1) ? ( commit_undo(); s_rel[sel] = fld_val; mark_custom(); );
+field(8, fx + (fw + fgap) * 3, fy2, fw, fh, "RISE SHAPE", s_aexp[sel], 0.10, 6, 3, 1) ? ( commit_undo(); s_aexp[sel] = fld_val; mkcurve(ca_base, sel, fld_val); mark_custom(); );
+field(9, fx + (fw + fgap) * 4, fy2, fw, fh, "FALL SHAPE", s_rexp[sel], 0.10, 6, 3, 1) ? ( commit_undo(); s_rexp[sel] = fld_val; mkcurve(cr_base, sel, fld_val); mark_custom(); );
 
 // ---------------------------------------------------------------- buttons
 uy = fy2 + fh + 10;
-btn(lx0, uy, 120, 26, "Reset Curves", 0) ? (
+ubtn(lx0, uy, 64, 26, "Undo", u_n > 0) ? do_undo();
+ubtn(lx0 + 70, uy, 64, 26, "Redo", rd_n > 0) ? do_redo();
+
+btn(lx0 + 146, uy, 118, 26, "Reset Curves", 0) ? (
+  push_undo();
   mkcurve(ca_base, sel, s_aexp[sel]); mkcurve(cr_base, sel, s_rexp[sel]); mark_custom();
 );
-btn(lx0 + 126, uy, 120, 26, "Copy Shape To All", 0) ? (
+btn(lx0 + 270, uy, 136, 26, "Copy Shape To All", 0) ? (
+  push_undo();
   i = 0;
   while (i < NSLOTS) (
     i != sel ? (
@@ -798,7 +917,7 @@ btn(lx0 + 126, uy, 120, 26, "Copy Shape To All", 0) ? (
   mark_custom();
 );
 sel >= 4 ? (
-  btn(lx0 + 252, uy, 100, 26, "Clear Lane", 0) ? ( clear_slot(sel); set_en(sel, 0); mark_custom(); );
+  btn(lx0 + 412, uy, 100, 26, "Clear Lane", 0) ? ( push_undo(); clear_slot(sel); set_en(sel, 0); mark_custom(); );
 );
 btn(gfx_w - 132, uy, 120, 26, "Panic / Reset", 0) ? ( all_notes_off(); reset_runtime(); );
 
@@ -808,7 +927,7 @@ setc(0.42, 0.45, 0.50);
 gfx_x = lx0; gfx_y = uy + 36;
 gfx_drawstr("CC1 / CC11 / CC7 / CC21 are fixed lanes. Lanes 5-7 are yours: set a CC number, then draw its curve.");
 gfx_x = lx0; gfx_y = uy + 52;
-gfx_drawstr("Green box mutes a lane (also on sliders 11-17). Drag any field to edit, Ctrl for fine. Save presets with the FX window's + button.");
+gfx_drawstr("Green box mutes a lane (also on sliders 11-17). Drag any field to edit, Ctrl for fine. Undo/Redo = Ctrl+Z / Ctrl+Y, 32 steps.");
 gfx_setfont(1);
 
 last_cap = mouse_cap;
