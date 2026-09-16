@@ -105,8 +105,8 @@ curve you want. They start blank.
 ### Turning lanes off
 
 Any lane can be switched off individually, either with the green toggle at the
-left of its row in the GUI or with its own slider (**Lane 1–7**, sliders 11–17).
-Both are the same control, so the toggle and the slider always agree, and
+left of its row in the GUI or via its parameter (**Lane 1–7**, sliders 11–17).
+Both are the same control, so the toggle and the parameter always agree, and
 because it is a real parameter it can be automated and is saved with the
 project and with presets.
 
@@ -228,21 +228,37 @@ be exported and shared as `.rpl` banks like any other REAPER preset.
 
 ## Global controls
 
-| Slider                  | Notes                                                   |
-|-------------------------|---------------------------------------------------------|
-| Instrument Preset       | Default / Strings / Brass / Woodwinds / Custom           |
-| Master Depth (%)        | Scales all CC movement around each lane's floor          |
-| Time Scale (%)          | Stretches or compresses every rise/settle/fall time      |
-| Trigger Mode            | *Legato*: only the first note of a phrase starts a new rise. *Retrigger*: every note-on restarts it (from the current value — no jumps) |
-| MIDI Input Channel      | Omni, or listen to one channel only                      |
-| CC Output Channel       | Follow the triggering note's channel, or force a channel |
-| Sustain Pedal Holds     | CC64 keeps the envelope sustaining after keys are released |
-| CC Update Interval (ms) | Resolution of the generated CC stream (default 5 ms)     |
-| Pass Through MIDI       | Forward the incoming notes (leave on unless AutoCC feeds another instance) |
-| CC Engine               | Active / Bypassed                                        |
-| Lane 1–7 (sliders 11–17)| Per-lane on/off, mirrored by the GUI toggles             |
+The **GLOBAL** strip along the bottom of the window. `DEPTH`, `TIME` and `RATE`
+are drag fields like the lane parameters; the other six are click-through
+settings — **left-click advances, right-click steps back**.
 
-All seventeen are automatable from the track's envelope lanes.
+| Control    | Slider | Notes                                               |
+|------------|--------|-----------------------------------------------------|
+| `DEPTH`    | 2      | Scales all CC movement around each lane's floor      |
+| `TIME`     | 3      | Stretches or compresses every rise/settle/fall time  |
+| `RATE`     | 8      | Resolution of the generated CC stream (default 5 ms) |
+| `TRIGGER`  | 4      | *Legato*: only the first note of a phrase starts a new rise. *Retrigger*: every note-on restarts it (from the current value — no jumps) |
+| `MIDI IN`  | 5      | Omni, or listen to one channel only                  |
+| `CC OUT`   | 6      | Follow the triggering note's channel, or force one   |
+| `PEDAL`    | 7      | Whether CC64 keeps the envelope sustaining after the keys are released |
+| `MIDI THRU`| 9      | Forward the incoming notes (leave on unless AutoCC feeds another instance) |
+| `ENGINE`   | 10     | Active / Bypassed                                    |
+
+Instrument preset is slider 1 (the header buttons); lane on/off is sliders
+11–17 (the green boxes in the lane list).
+
+### Why there are no slider rows above the UI
+
+Every parameter is reachable from the custom interface, so the standard JSFX
+slider panel would only duplicate it — seventeen rows of it. All seventeen are
+therefore declared with a `-` prefix on the description, which hides the row
+while leaving the parameter live, saved with the project and **automatable from
+the track's envelope lanes** as normal (use the FX window's *Param* button to
+find them).
+
+If you would rather have the rows back, delete the `-` before the description on
+the `sliderN:` lines at the top of `AutoCC.jsfx` — one character each, and the
+custom UI keeps working either way.
 
 ---
 

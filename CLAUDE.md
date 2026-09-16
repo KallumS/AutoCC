@@ -171,6 +171,24 @@ Timing: `@block` collects MIDI into a queue, then advances the envelope
 is emitted **before** the note-on is forwarded, because libraries latch dynamics
 at note-on. CCs are only sent when the rounded 0–127 value changes.
 
+### The UI is the only surface
+All 17 sliders are declared with a `-` prefix, which hides the standard slider
+panel while keeping each parameter live and automatable. That means **every
+parameter must have a control in `@gfx`** — adding a slider without one makes it
+unreachable. The GLOBAL strip along the bottom covers sliders 2–10, the header
+buttons cover slider 1, and the lane list's green boxes cover 11–17.
+
+Derived values (`depth`, `tscale`, `step_samples`, …) are computed in
+`apply_sliders()` rather than inline in `@slider`, because `@gfx` writes sliders
+directly and `sliderchange()` does **not** re-run `@slider`. Any GUI control that
+writes a slider must call `apply_sliders()` afterwards.
+
+Global settings are deliberately **outside** the internal undo stack — they are
+ordinary parameters, so they set `undo_pt` for a REAPER undo point and stop
+there. The Undo/Redo buttons cover lane design only. (`field()` arms the undo
+staging buffer on mouse-down regardless; with no matching `commit_undo()` the arm
+is discarded on mouse-up, which is why global drags are harmless.)
+
 ### Lane enables
 Live on **sliders 11–17**, not in `s_en` alone and *not* in presets — so changing
 instrument never un-mutes a lane the user muted. `set_en()` writes both the array
