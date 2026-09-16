@@ -50,13 +50,27 @@ Each lane sits in its own value range so they don't fight each other:
 | Lane | Floor | Peak | Sustain | Range across all presets |
 |------|-------|------|---------|--------------------------|
 | CC1  | 0     | 100–112 | 90–96 | full sweep, 0% up to ~88% |
-| CC11 | 20–30 | 100–110 | 90–100 | ~16% up to ~87% |
+| CC11 | 60–70 | 100–110 | 98–105 | **~35 point travel** — half of CC1's |
 | CC7  | 110–112 | 118–121 | 115 | **stays in an 87–95% band** so volume never drops far |
 | CC21 | 0     | 25      | 25    | **peaks at 20%** — deliberately minimal |
 
 CC7 only breathes by a few values around 90% — enough to add body on a swell
 without ever pulling the level down. CC21 is capped low because it usually
 drives vibrato or tightness, where a high value is rarely wanted.
+
+**Why CC11 moves so much less than CC1.** In most libraries CC1 crossfades
+between recorded dynamic layers, so it changes timbre *and* loudness — a
+crescendo on CC1 sounds like a player pushing harder. CC11 is a plain volume
+trim. If both swept the full range together you would get two crescendos
+stacked on one gesture, and the result reads as exaggerated. So CC11's
+excursion is half of CC1's, anchored at the top: the loud end stays where it
+is and the resting floor comes up, which also stops CC11 attenuating quiet
+passages. Measured on a held note at velocity 100, CC1 travels ~95 points and
+CC11 travels ~35.
+
+If your library treats CC11 as the primary dynamics control (a few do), raise
+its peak and drop its floor to taste — or mute CC1's lane and let CC11 carry
+the arc.
 
 ### CC21 builds late, then drops away
 

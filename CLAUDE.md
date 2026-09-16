@@ -147,6 +147,11 @@ Seven. 0–3 are fixed CCs (**CC1** dynamics, **CC11** expression, **CC7** volum
 4–6 are free user lanes (`s_cc = -1` when blank).
 
 Deliberate value ranges, so lanes don't fight:
+- CC11's excursion is **half of CC1's** (~35 points against ~95), anchored at
+  the peak so the floor rises rather than the top dropping. Reason: CC1
+  crossfades recorded dynamic layers, changing timbre *and* level, while CC11 is
+  a plain volume trim — sweeping both fully stacks two crescendos on one gesture
+  and reads as exaggerated. Don't "restore" CC11's range without that in mind.
 - CC7 stays in an **87–95%** band (floor 110–112, peak 118–121, sustain 115) so
   volume is never pulled far down.
 - CC21 peaks at **20%** (25 of 127) and is shaped as a *late* gesture: long
