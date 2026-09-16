@@ -45,6 +45,19 @@ simultaneously:
 
 Their CC numbers cannot be changed. Everything else about them can.
 
+Each lane sits in its own value range so they don't fight each other:
+
+| Lane | Floor | Peak | Sustain | Range across all presets |
+|------|-------|------|---------|--------------------------|
+| CC1  | 0     | 100–112 | 90–96 | full sweep, 0% up to ~88% |
+| CC11 | 20–30 | 100–110 | 90–100 | ~16% up to ~87% |
+| CC7  | 110–112 | 118–121 | 115 | **stays in an 87–95% band** so volume never drops far |
+| CC21 | 0     | 25      | 21–23 | **peaks at 20%** — deliberately minimal |
+
+CC7 only breathes by a few values around 90% — enough to add body on a swell
+without ever pulling the level down. CC21 is capped low because it usually
+drives vibrato or tightness, where a high value is rarely wanted.
+
 Plus three **free lanes** (5–7). Pick any CC number `0–127` and draw whatever
 curve you want. They start blank.
 
