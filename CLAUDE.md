@@ -166,6 +166,13 @@ the stage loop terminates — don't "fix" that by special-casing zero.
 Curves are 33-point tables interpolated at runtime, generated from an exponent
 or drawn by hand. Exponent **< 1** rises fast early, **> 1** is a slow swell.
 
+The canvas playhead maps runtime state back onto the drawing: stage picks the
+band, and `r_t` is divided by `tscale` because runtime durations are multiplied
+by it while the canvas is drawn in unscaled ms. Verified in simulation to land
+within 0.00px of the drawn curve at full velocity, at Time Scale 50% and 250%.
+Below full velocity the dot sits under the curve by design — the curve is the
+nominal shape, the dot is the value actually being sent.
+
 Timing: `@block` collects MIDI into a queue, then advances the envelope
 *between* events so generated CCs get true sample offsets. The starting CC value
 is emitted **before** the note-on is forwarded, because libraries latch dynamics

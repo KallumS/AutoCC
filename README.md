@@ -161,6 +161,17 @@ Drag any field to change it; hold **Ctrl** for fine adjustment.
 
 ### Drawing custom curves
 
+While a note is sounding, a green **playhead** tracks the envelope: a vertical
+line at the point it has reached along its own timeline, a dot on the curve at
+the value being sent, and that value in figures beside it. During sustain the
+playhead parks at the right edge of the hold band, since a held note has no
+fixed length.
+
+One thing that looks like a bug and isn't: at less than full velocity the dot
+sits *below* the drawn curve. The curve is the design at full velocity; the dot
+is what is actually being sent. The gap between them is the `VELOCITY` amount
+doing its job — set `VELOCITY` to 0 and they coincide at every dynamic.
+
 The big panel is a live envelope display. Drag inside the blue **RISE** band or
 the red **FALL** band to draw that segment freehand — the shape is stored as a
 33-point table per lane and used verbatim by the engine. Dragging across

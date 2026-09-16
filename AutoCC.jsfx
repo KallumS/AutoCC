@@ -912,12 +912,38 @@ while (px <= cw) (
   px += 1;
 );
 
-// ---- live readout on the canvas
-slot_live(sel) ? (
-  ly = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
-  r_stage[sel] ? setca(0.35, 0.90, 0.60, 0.9) : setca(0.45, 0.50, 0.58, 0.5);
-  gfx_line(cx, ly, cx + cw, ly);
-  gfx_rect(cx + cw - 5, ly - 2, 5, 5, 1);
+// ---- live playhead
+// Vertical line at where the envelope currently is along its own timeline, with
+// a dot at the value being sent. Runtime stage times are already multiplied by
+// tscale, so divide it back out to land on the unscaled ms the canvas is drawn
+// in. During sustain the playhead parks at the right edge of the (display-only)
+// hold band rather than running off, since a held note has no fixed length.
+(slot_live(sel) && r_stage[sel]) ? (
+  pst = r_stage[sel];
+  pms = r_t[sel] * 1000 / max(0.0001, tscale);
+  pt  = pst == 1 ? min(pms, ta) :
+        pst == 2 ? ta + min(pms, td) :
+        pst == 3 ? ta + td + min(pms, th) :
+                   ta + td + th + min(pms, tr);
+  phx = cx + cw * clampv(pt, 0, tot) / tot;
+  phy = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
+
+  setca(0.35, 0.90, 0.60, 0.30);
+  gfx_line(phx, cy, phx, cy + chh);
+  setca(0.35, 0.90, 0.60, 0.22);
+  gfx_circle(phx, phy, 8, 0, 1);
+  setca(0.40, 0.95, 0.65, 1.00);
+  gfx_circle(phx, phy, 4, 1, 1);
+
+  // Value rides beside the dot, flipping left near the right edge.
+  gfx_setfont(3);
+  fmtval(0, floor(r_val[sel] + 0.5));
+  gfx_measurestr(#g, mw, mh);
+  setca(0.50, 1.00, 0.72, 0.95);
+  gfx_x = (phx + 10 + mw) > (cx + cw) ? phx - 10 - mw : phx + 10;
+  gfx_y = clampv(phy - mh * 0.5, cy + 2, cy + chh - mh - 2);
+  gfx_drawstr(#g);
+  gfx_setfont(1);
 );
 
 gfx_setfont(2);
