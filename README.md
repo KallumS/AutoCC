@@ -49,9 +49,9 @@ Each lane sits in its own value range so they don't fight each other:
 
 | Lane | Floor | Peak | Sustain | Range across all presets |
 |------|-------|------|---------|--------------------------|
-| CC1  | 0     | 100–112 | 90–96 | full sweep, 0% up to ~88% |
-| CC11 | 60–70 | 100–110 | 98–105 | **~35 point travel** — half of CC1's |
-| CC7  | 110–112 | 118–121 | 115 | **stays in an 87–95% band** so volume never drops far |
+| CC1  | 0     | 100–112 | 87–92 | full sweep, 0% up to ~88% |
+| CC11 | 60–70 | 100–110 | 97–104 | **~35 point travel** — half of CC1's |
+| CC7  | 110–112 | 118–121 | 113–114 | **stays in an 87–95% band** so volume never drops far |
 | CC21 | 0     | 25      | 25    | **peaks at 20%** — deliberately minimal |
 
 CC7 only breathes by a few values around 90% — enough to add body on a swell
@@ -134,7 +134,10 @@ from Strings to Brass will never turn a lane back on behind your back.
 
 * **RISE** — from the current value up to *peak*, following the rise curve.
 * **SETTLE** — peak eases down to the *sustain* level (the natural post-attack
-  settle of a real bow/breath).
+  settle of a real bow/breath). Measured at velocity 100, the drop is about 12
+  points on Strings CC1, 18 on Brass and 14 on Woodwinds — the bloom is
+  deliberately obvious. Shrink `SUSTAIN`'s distance from `PEAK` if you want it
+  subtler.
 * **SUSTAIN** — holds while the note is held.
 * **FALL** — on note-off, drops from wherever it is back to *floor*, following
   the fall curve.

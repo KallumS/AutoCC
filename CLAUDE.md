@@ -152,8 +152,8 @@ Deliberate value ranges, so lanes don't fight:
   crossfades recorded dynamic layers, changing timbre *and* level, while CC11 is
   a plain volume trim — sweeping both fully stacks two crescendos on one gesture
   and reads as exaggerated. Don't "restore" CC11's range without that in mind.
-- CC7 stays in an **87–95%** band (floor 110–112, peak 118–121, sustain 115) so
-  volume is never pulled far down.
+- CC7 stays in an **87–95%** band (floor 110–112, peak 118–121, sustain 113–114)
+  so volume is never pulled far down.
 - CC21 peaks at **20%** (25 of 127) and is shaped as a *late* gesture: long
   heavily-curved rise, no settle stage, short fall. Note length therefore decides
   vibrato depth on its own.
