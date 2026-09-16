@@ -145,6 +145,46 @@ from Strings to Brass will never turn a lane back on behind your back.
 *Floor* is the resting value sent when nothing is playing, so the library is
 always in a sane state.
 
+### Envelope modes
+
+`MODE` in the GLOBAL strip decides whether the arc follows your key or runs on
+its own.
+
+| Mode | Stages | Note-off |
+|------|--------|----------|
+| **Gated** (default) | rise → settle → sustain *while held* → fall | starts the fall |
+| **One-shot** | rise → settle → hold for `HOLD` ms → fall | **ignored** |
+| **ADR** | rise → settle → fall, no sustain at all | **ignored** |
+
+**One-shot** plays the whole arc on a key press however briefly you touch the
+key — useful for stabs, short marcato notes, and anywhere you want a consistent
+swell regardless of how long you happened to hold the note. Because there is no
+key to wait for, the sustain length comes from `HOLD` instead.
+
+**ADR** drops the sustain plateau entirely: the settle runs straight into the
+fall. Note that this is still a *three*-stage fall shape, not a decay to zero —
+`SETTLE` takes the peak down to the `SUSTAIN` level, then `FALL` takes it from
+there to the floor, each with its own curve. Total length is `RISE + SETTLE +
+FALL` and nothing else affects it.
+
+Measured on Strings CC1 (rise 900, settle 400, fall 1100) with the key touched
+for only 200 ms:
+
+| Mode | What happens |
+|------|--------------|
+| Gated | fall starts at 200 ms, CC1 peaks at **5** — the arc never got going |
+| One-shot | full arc, peaks at **102**, finishes at 3200 ms |
+| ADR | full arc, peaks at **102**, finishes at 2400 ms |
+
+In One-shot and ADR the sustain pedal does nothing, since there is no note-off
+to defer. The canvas draws the hold band to scale in these modes, so what you
+see is the real length.
+
+One refinement worth knowing: in Legato trigger mode a new note normally will
+not restart an arc already in progress — but once a one-shot has finished, the
+next note *does* start a fresh one. Otherwise a finished shot could never fire
+again while a key was still down.
+
 ### Per-lane parameters
 
 | Field       | Meaning                                                       |
@@ -246,16 +286,25 @@ The **GLOBAL** strip along the bottom of the window. `DEPTH`, `TIME` and `RATE`
 are drag fields like the lane parameters; the other six are click-through
 settings — **left-click advances, right-click steps back**.
 
+**Row 1 — envelope**
+
 | Control    | Slider | Notes                                               |
 |------------|--------|-----------------------------------------------------|
-| `DEPTH`    | 2      | Scales all CC movement around each lane's floor      |
-| `TIME`     | 3      | Stretches or compresses every rise/settle/fall time  |
-| `RATE`     | 8      | Resolution of the generated CC stream (default 5 ms) |
+| `MODE`     | 18     | Gated / One-shot / ADR — see below                   |
+| `HOLD`     | 19     | One-shot's sustain length (greyed out in the other modes) |
 | `TRIGGER`  | 4      | *Legato*: only the first note of a phrase starts a new rise. *Retrigger*: every note-on restarts it (from the current value — no jumps) |
+| `DEPTH`    | 2      | Scales all CC movement around each lane's floor      |
+| `TIME`     | 3      | Stretches or compresses every stage, hold included   |
+
+**Row 2 — MIDI routing and output**
+
+| Control    | Slider | Notes                                               |
+|------------|--------|-----------------------------------------------------|
 | `MIDI IN`  | 5      | Omni, or listen to one channel only                  |
 | `CC OUT`   | 6      | Follow the triggering note's channel, or force one   |
-| `PEDAL`    | 7      | Whether CC64 keeps the envelope sustaining after the keys are released |
+| `PEDAL`    | 7      | Whether CC64 keeps the envelope sustaining after the keys are released (Gated only) |
 | `MIDI THRU`| 9      | Forward the incoming notes (leave on unless AutoCC feeds another instance) |
+| `RATE`     | 8      | Resolution of the generated CC stream (default 5 ms) |
 | `ENGINE`   | 10     | Active / Bypassed                                    |
 
 Instrument preset is slider 1 (the header buttons); lane on/off is sliders

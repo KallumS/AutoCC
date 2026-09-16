@@ -30,6 +30,8 @@ slider14:1<0,1,1{Off,On}>-Lane 4 - CC21 Aux / Vibrato
 slider15:0<0,1,1{Off,On}>-Lane 5 - User 1
 slider16:0<0,1,1{Off,On}>-Lane 6 - User 2
 slider17:0<0,1,1{Off,On}>-Lane 7 - User 3
+slider18:0<0,2,1{Gated - follows the key,One-shot - plays through,ADR - no sustain}>-Envelope Mode
+slider19:800<0,10000,10>-One-shot Hold (ms)
 
 @init
 
@@ -289,6 +291,8 @@ function apply_sliders() (
   sync_en(4, slider15 >= 0.5);
   sync_en(5, slider16 >= 0.5);
   sync_en(6, slider17 >= 0.5);
+  env_mode = slider18;
+  hold_ms  = slider19;
   en_primed = 1;
 );
 
@@ -344,13 +348,24 @@ function env_tick(dt, off) local(i, st, t, fl, pk, su, v, dur, done) (
           );
         ) : st == 2 ? (
           dur = s_dcy[i] * 0.001 * tscale;
-          t >= dur ? ( t -= dur; st = 3; ) : (
+          t >= dur ? (
+            t -= dur;
+            // ADR has no sustain plateau: the decay runs straight into the fall.
+            env_mode == 2 ? ( r_relst[i] = su; st = 4; ) : ( st = 3; );
+          ) : (
             v = pk + (su - pk) * (t / dur);
             done = 1;
           );
         ) : st == 3 ? (
-          v = su;
-          done = 1;
+          // Gated holds until note-off. One-shot holds for a fixed time and
+          // then releases itself, because there is no key to wait for.
+          env_mode == 1 ? (
+            dur = hold_ms * 0.001 * tscale;
+            t >= dur ? ( t -= dur; r_relst[i] = su; st = 4; ) : ( v = su; done = 1; );
+          ) : (
+            v = su;
+            done = 1;
+          );
         ) : st == 4 ? (
           dur = s_rel[i] * 0.001 * tscale;
           t >= dur ? ( st = 0; t = 0; ) : (
@@ -398,7 +413,10 @@ function start_env(vel, off) local(i, va) (
   );
 );
 
-function release_env() local(i) (
+// force is set by panic; otherwise only Gated mode reacts to a key lift, since
+// One-shot and ADR are meant to finish the arc on their own.
+function release_env(force) local(i) (
+  (!force && env_mode != 0) ? 0 : (
   i = 0;
   while (i < NSLOTS) (
     r_stage[i] != 0 ? (
@@ -408,6 +426,14 @@ function release_env() local(i) (
     );
     i += 1;
   );
+  );
+);
+
+// True when nothing is sounding on any live lane.
+function env_idle() local(i, r) (
+  i = 0; r = 1;
+  while (i < NSLOTS) ( (s_en[i] && r_stage[i]) ? r = 0; i += 1; );
+  r;
 );
 
 function all_notes_off() local(i) (
@@ -415,7 +441,7 @@ function all_notes_off() local(i) (
   while (i < 128) ( notes_base[i] = 0; i += 1; );
   note_cnt   = 0;
   pedal_down = 0;
-  release_env();
+  release_env(1);
 );
 
 function handle_event(off, m1, m2, m3) local(st, ch) (
@@ -425,14 +451,14 @@ function handle_event(off, m1, m2, m3) local(st, ch) (
     (st == 0x90 && m3 > 0) ? (
       last_chan = ch;
       notes_base[m2] ? 0 : ( notes_base[m2] = 1; note_cnt += 1; );
-      (note_cnt == 1 || retrig_mode) ? start_env(m3, off);
+      (note_cnt == 1 || retrig_mode || env_idle()) ? start_env(m3, off);
     ) : (st == 0x80 || (st == 0x90 && m3 == 0)) ? (
       notes_base[m2] ? ( notes_base[m2] = 0; note_cnt = max(0, note_cnt - 1); );
-      (note_cnt == 0 && !(pedal_hold && pedal_down)) ? release_env();
+      (note_cnt == 0 && !(pedal_hold && pedal_down)) ? release_env(0);
     ) : st == 0xB0 ? (
       m2 == 64 ? (
         pedal_down = m3 >= 64;
-        (!pedal_down && note_cnt == 0) ? release_env();
+        (!pedal_down && note_cnt == 0) ? release_env(0);
       );
       (m2 == 120 || m2 == 123) ? all_notes_off();
     );
@@ -535,7 +561,7 @@ file_mem(0, cr_base, NSLOTS * CN);
   last_preset = slider1;
 );
 
-@gfx 820 620
+@gfx 820 660
 
 function slot_name(s) (
   s == 0 ? "Dynamics" :
@@ -832,7 +858,11 @@ while (gi < 4) ( gfx_line(cx, cy + chh * gi / 4, cx + cw, cy + chh * gi / 4); gi
 
 fl = s_floor[sel]; pk = s_peak[sel]; su = s_sus[sel];
 ta = s_atk[sel]; td = s_dcy[sel]; tr = s_rel[sel];
-th = max(150, (ta + td + tr) * 0.30);
+// In One-shot and ADR the hold length is known, so the canvas can draw it to
+// scale. Gated has no fixed length, so the band is just a readable placeholder.
+th = env_mode == 2 ? 0 :
+     env_mode == 1 ? hold_ms :
+                     max(150, (ta + td + tr) * 0.30);
 tot = max(1, ta + td + th + tr);
 
 xa1 = cx + cw * ta / tot;
@@ -948,7 +978,10 @@ while (px <= cw) (
 
 gfx_setfont(2);
 setca(0.55, 0.75, 1.00, 0.8); gfx_x = cx + 4;  gfx_y = cy + chh - 16; gfx_drawstr("RISE");
-setca(0.95, 0.85, 0.55, 0.8); gfx_x = xa1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("SUSTAIN");
+(xs1 - xa1) > 34 ? (
+  setca(0.95, 0.85, 0.55, 0.8); gfx_x = xa1 + 4; gfx_y = cy + chh - 16;
+  gfx_drawstr(env_mode == 1 ? "HOLD" : "SUSTAIN");
+);
 setca(1.00, 0.60, 0.60, 0.8); gfx_x = xs1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("FALL");
 gfx_setfont(1);
 
@@ -1002,61 +1035,74 @@ sel >= 4 ? (
 btn(gfx_w - 132, uy, 120, 26, "Panic / Reset", 0) ? ( all_notes_off(); reset_runtime(); );
 
 // ------------------------------------------------- global settings strip
-// These used to be visible only as REAPER slider rows above the UI. The rows
-// are hidden now, so every one of them needs a control here.
-gy = uy + 38;
-gh = 46;
-gw = floor((gfx_w - 24 - 6 * 8) / 9);
-gxs = lx0;
+// Two rows: envelope behaviour on top, MIDI routing and output below. At the
+// 820px minimum this keeps every label readable, which one row of eleven would
+// not.
+gy  = uy + 42;
+gh  = 42;
+gw1 = floor((gfx_w - 24 - 6 * 4) / 5);
+gw2 = floor((gfx_w - 24 - 6 * 5) / 6);
+gy2 = gy + gh + 4;
 
 gfx_setfont(2);
 setc(0.50, 0.53, 0.58);
-gfx_x = lx0; gfx_y = gy - 15;
+gfx_x = lx0; gfx_y = gy - 14;
 gfx_drawstr("GLOBAL");
 gfx_setfont(1);
 
-gc = 0;
-gxp = gxs;                       // column 1
-field(30, gxp, gy, gw, gh, "DEPTH", slider2, 0, 200, 2, 1) ?
-  ( slider2 = fld_val; sliderchange(slider2); apply_sliders(); undo_pt = 1; );
+// ---- row 1: envelope
+gxp = lx0;
+optctl(33, gxp, gy, gw1, gh, "MODE", slider18, 2) ?
+  ( slider18 = fld_val; sliderchange(slider18); apply_sliders(); undo_pt = 1; );
+ctl_txt(slider18 == 0 ? "Gated" : slider18 == 1 ? "One-shot" : "ADR",
+        0.92, 0.94, 0.97);
 
-gxp = gxs + (gw + 6);            // column 2
-field(31, gxp, gy, gw, gh, "TIME", slider3, 10, 400, 2, 1) ?
-  ( slider3 = fld_val; sliderchange(slider3); apply_sliders(); undo_pt = 1; );
+gxp = lx0 + (gw1 + 6);
+field(39, gxp, gy, gw1, gh, "HOLD", slider19, 0, 10000, 1, slider18 == 1) ?
+  ( slider19 = fld_val; sliderchange(slider19); apply_sliders(); undo_pt = 1; );
 
-gxp = gxs + (gw + 6) * 2;        // column 3
-field(32, gxp, gy, gw, gh, "RATE", slider8, 1, 30, 1, 1) ?
-  ( slider8 = fld_val; sliderchange(slider8); apply_sliders(); undo_pt = 1; );
-
-gxp = gxs + (gw + 6) * 3;        // column 4
-optctl(33, gxp, gy, gw, gh, "TRIGGER", slider4, 1) ?
+gxp = lx0 + (gw1 + 6) * 2;
+optctl(34, gxp, gy, gw1, gh, "TRIGGER", slider4, 1) ?
   ( slider4 = fld_val; sliderchange(slider4); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider4 ? "Retrigger" : "Legato", 0.92, 0.94, 0.97);
 
-gxp = gxs + (gw + 6) * 4;        // column 5
-optctl(34, gxp, gy, gw, gh, "MIDI IN", slider5, 16) ?
+gxp = lx0 + (gw1 + 6) * 3;
+field(30, gxp, gy, gw1, gh, "DEPTH", slider2, 0, 200, 2, 1) ?
+  ( slider2 = fld_val; sliderchange(slider2); apply_sliders(); undo_pt = 1; );
+
+gxp = lx0 + (gw1 + 6) * 4;
+field(31, gxp, gy, gw1, gh, "TIME", slider3, 10, 400, 2, 1) ?
+  ( slider3 = fld_val; sliderchange(slider3); apply_sliders(); undo_pt = 1; );
+
+// ---- row 2: MIDI routing and output
+gxp = lx0;
+optctl(35, gxp, gy2, gw2, gh, "MIDI IN", slider5, 16) ?
   ( slider5 = fld_val; sliderchange(slider5); apply_sliders(); undo_pt = 1; );
 slider5 > 0 ? ( fmtval(0, slider5); ctl_txt(#g, 0.92, 0.94, 0.97); )
             : ctl_txt("Omni", 0.92, 0.94, 0.97);
 
-gxp = gxs + (gw + 6) * 5;        // column 6
-optctl(35, gxp, gy, gw, gh, "CC OUT", slider6, 16) ?
+gxp = lx0 + (gw2 + 6);
+optctl(36, gxp, gy2, gw2, gh, "CC OUT", slider6, 16) ?
   ( slider6 = fld_val; sliderchange(slider6); apply_sliders(); undo_pt = 1; );
 slider6 > 0 ? ( fmtval(0, slider6); ctl_txt(#g, 0.92, 0.94, 0.97); )
             : ctl_txt("Follow", 0.92, 0.94, 0.97);
 
-gxp = gxs + (gw + 6) * 6;        // column 7
-optctl(36, gxp, gy, gw, gh, "PEDAL", slider7, 1) ?
+gxp = lx0 + (gw2 + 6) * 2;
+optctl(37, gxp, gy2, gw2, gh, "PEDAL", slider7, 1) ?
   ( slider7 = fld_val; sliderchange(slider7); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider7 ? "Holds" : "Ignored", 0.92, 0.94, 0.97);
 
-gxp = gxs + (gw + 6) * 7;        // column 8
-optctl(37, gxp, gy, gw, gh, "MIDI THRU", slider9, 1) ?
+gxp = lx0 + (gw2 + 6) * 3;
+optctl(38, gxp, gy2, gw2, gh, "MIDI THRU", slider9, 1) ?
   ( slider9 = fld_val; sliderchange(slider9); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider9 ? "On" : "Off", 0.92, 0.94, 0.97);
 
-gxp = gxs + (gw + 6) * 8;        // column 9
-optctl(38, gxp, gy, gw, gh, "ENGINE", slider10, 1) ?
+gxp = lx0 + (gw2 + 6) * 4;
+field(32, gxp, gy2, gw2, gh, "RATE", slider8, 1, 30, 1, 1) ?
+  ( slider8 = fld_val; sliderchange(slider8); apply_sliders(); undo_pt = 1; );
+
+gxp = lx0 + (gw2 + 6) * 5;
+optctl(40, gxp, gy2, gw2, gh, "ENGINE", slider10, 1) ?
   ( slider10 = fld_val; sliderchange(slider10); apply_sliders(); undo_pt = 1; );
 slider10 ? ctl_txt("BYPASSED", 1.00, 0.45, 0.45)
          : ctl_txt("Active", 0.45, 0.90, 0.60);
@@ -1064,9 +1110,9 @@ slider10 ? ctl_txt("BYPASSED", 1.00, 0.45, 0.45)
 // ---------------------------------------------------------------- footer
 gfx_setfont(5);
 setc(0.42, 0.45, 0.50);
-gfx_x = lx0; gfx_y = gy + gh + 10;
+gfx_x = lx0; gfx_y = gy2 + gh + 10;
 gfx_drawstr("CC1 / CC11 / CC7 / CC21 are fixed lanes. Lanes 5-7 are yours: set a CC number, then draw its curve.");
-gfx_x = lx0; gfx_y = gy + gh + 26;
+gfx_x = lx0; gfx_y = gy2 + gh + 26;
 gfx_drawstr("Green box mutes a lane. Drag a field to edit, Ctrl for fine. Click a GLOBAL setting to advance it, right-click to go back.");
 gfx_setfont(1);
 

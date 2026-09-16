@@ -163,8 +163,28 @@ Stages `0 idle → 1 attack → 2 settle → 3 sustain → 4 release`. A stage w
 duration 0 falls straight through (`t >= dur` is true at `t > 0`), which is why
 the stage loop terminates — don't "fix" that by special-casing zero.
 
+`env_mode` (slider 18) picks how the machine leaves stage 2 and 3:
+- **0 Gated** — stage 3 holds until `release_env()` is called from note-off.
+- **1 One-shot** — stage 3 holds for `hold_ms` (slider 19, scaled by `tscale`)
+  and then releases itself.
+- **2 ADR** — stage 2 goes straight to stage 4, so stage 3 is never entered.
+
+In modes 1 and 2 `release_env(force)` no-ops unless `force` is set, which only
+panic does; note-off and the sustain pedal are deliberately inert there. The
+note-on trigger test also allows `env_idle()`, so a finished one-shot can fire
+again in Legato mode — without it a completed shot could never restart while a
+key was still held. Verified in simulation: all three modes reach idle at the
+floor on every lane and preset, one-shot length tracks
+`rise + settle + hold + fall`, ADR tracks `rise + settle + fall`, and Time Scale
+stretches the hold with everything else.
+
 Curves are 33-point tables interpolated at runtime, generated from an exponent
 or drawn by hand. Exponent **< 1** rises fast early, **> 1** is a slow swell.
+
+The canvas hold band `th` is the real `hold_ms` in One-shot and 0 in ADR, so the
+drawing is to scale in both; only Gated uses an arbitrary placeholder width,
+since a held note has no length. The middle band's label is suppressed below
+34px and reads HOLD rather than SUSTAIN in One-shot.
 
 The canvas playhead maps runtime state back onto the drawing: stage picks the
 band, and `r_t` is divided by `tscale` because runtime durations are multiplied
@@ -179,11 +199,12 @@ is emitted **before** the note-on is forwarded, because libraries latch dynamics
 at note-on. CCs are only sent when the rounded 0–127 value changes.
 
 ### The UI is the only surface
-All 17 sliders are declared with a `-` prefix, which hides the standard slider
+All 19 sliders are declared with a `-` prefix, which hides the standard slider
 panel while keeping each parameter live and automatable. That means **every
 parameter must have a control in `@gfx`** — adding a slider without one makes it
-unreachable. The GLOBAL strip along the bottom covers sliders 2–10, the header
-buttons cover slider 1, and the lane list's green boxes cover 11–17.
+unreachable. The GLOBAL strip along the bottom covers sliders 2–10 and 18–19 in
+two rows (envelope, then MIDI routing), the header buttons cover slider 1, and
+the lane list's green boxes cover 11–17.
 
 Derived values (`depth`, `tscale`, `step_samples`, …) are computed in
 `apply_sliders()` rather than inline in `@slider`, because `@gfx` writes sliders
