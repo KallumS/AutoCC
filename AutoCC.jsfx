@@ -1,0 +1,759 @@
+desc:AutoCC - automatic MIDI CC curves for orchestral libraries
+author:AutoCC
+version:1.0
+tags:MIDI processing controller orchestral expression
+about:
+  AutoCC generates orchestral CC curves automatically from incoming MIDI notes.
+  A note-on starts an arc (rise -> sustain -> fall) on up to seven CC lanes at
+  once. Four fixed lanes (CC1, CC11, CC7, CC21) plus three free user lanes with
+  fully drawable curves. Instrument presets shape the arcs the way the real
+  instrument families behave.
+
+in_pin:none
+out_pin:none
+
+slider1:0<0,4,1{Default,Strings,Brass,Woodwinds,Custom}>Instrument Preset
+slider2:100<0,200,1>Master Depth (%)
+slider3:100<10,400,1>Time Scale (%)
+slider4:0<0,1,1{Legato - first note only,Retrigger - every note}>Trigger Mode
+slider5:0<0,16,1{Omni,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>MIDI Input Channel
+slider6:0<0,16,1{Follow note,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16}>CC Output Channel
+slider7:1<0,1,1{No,Yes}>Sustain Pedal Holds Envelope
+slider8:5<1,30,1>CC Update Interval (ms)
+slider9:1<0,1,1{No,Yes}>Pass Through MIDI
+slider10:0<0,1,1{Active,Bypassed}>CC Engine
+
+@init
+
+NSLOTS = 7;
+CN     = 33;      // curve table resolution
+SER_V  = 1;
+
+// ---- parameter arrays (contiguous 0..175 so @serialize can grab them in one go)
+s_en    = 0;
+s_cc    = 16;
+s_floor = 32;
+s_peak  = 48;
+s_sus   = 64;
+s_atk   = 80;
+s_dcy   = 96;
+s_rel   = 112;
+s_vel   = 128;    // 0..100 %
+s_aexp  = 144;
+s_rexp  = 160;
+PARAM_LEN = 176;
+
+// ---- runtime state
+r_stage = 176;    // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
+r_t     = 192;
+r_val   = 208;
+r_start = 224;
+r_relst = 240;
+r_last  = 256;
+r_vsc   = 272;
+
+// ---- curve tables
+ca_base = 512;    // NSLOTS*CN = 231
+cr_base = 800;
+
+notes_base = 1200;   // 128 note-held flags
+ev_base    = 2048;   // MIDI event queue, 4 words each
+EV_MAX     = 2048;
+
+ser_ver = SER_V;
+
+function setc(r, g, b) ( gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = 1; );
+function setca(r, g, b, a) ( gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = a; );
+function clampv(v, a, b) ( max(a, min(b, v)) );
+
+function mkcurve(base, s, e) local(i, p) (
+  e = max(0.08, min(8, e));
+  i = 0;
+  while (i < CN) (
+    p = i / (CN - 1);
+    base[s * CN + i] = p ^ e;
+    i += 1;
+  );
+);
+
+function curve_at(base, s, p) local(x, i0, f) (
+  p = max(0, min(1, p));
+  x = p * (CN - 1);
+  i0 = x | 0;
+  i0 >= CN - 1 ? (
+    base[s * CN + CN - 1];
+  ) : (
+    f = x - i0;
+    base[s * CN + i0] * (1 - f) + base[s * CN + i0 + 1] * f;
+  );
+);
+
+function setslot(s, en, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
+  s_en[s]    = en;
+  s_cc[s]    = cc;
+  s_floor[s] = fl;
+  s_peak[s]  = pk;
+  s_sus[s]   = su;
+  s_atk[s]   = atk;
+  s_dcy[s]   = dcy;
+  s_rel[s]   = rel;
+  s_vel[s]   = vel;
+  s_aexp[s]  = ae;
+  s_rexp[s]  = re;
+  mkcurve(ca_base, s, ae);
+  mkcurve(cr_base, s, re);
+  r_last[s]  = -1;
+);
+
+// Built-in instrument presets only touch the four fixed lanes so that any
+// custom lanes the user has built stay intact when auditioning presets.
+function load_preset(p) (
+  p == 1 ? (
+    // Strings: slow swelling rise, settled sustain, long gentle fall
+    setslot(0, 1,  1,   0, 102,  92,  900, 400, 1100, 35, 2.00, 1.25);
+    setslot(1, 1, 11,  25, 105,  98,  700, 300,  900, 25, 1.70, 1.20);
+    setslot(2, 1,  7,  92, 106, 100,  650, 350,  800,  0, 1.60, 1.15);
+    setslot(3, 1, 21,   0,  75,  70, 1200, 500, 1300, 20, 2.20, 1.30);
+  ) : p == 2 ? (
+    // Brass: fast attack with a bloom, firm sustain, moderate fall
+    setslot(0, 1,  1,   0, 112,  96,  130, 220,  420, 55, 0.55, 0.85);
+    setslot(1, 1, 11,  30, 110, 100,  100, 180,  380, 40, 0.50, 0.85);
+    setslot(2, 1,  7,  90, 112, 100,  120, 200,  400,  0, 0.55, 0.85);
+    setslot(3, 1, 21,   0,  80,  68,  180, 260,  450, 25, 0.60, 0.90);
+  ) : p == 3 ? (
+    // Woodwinds: quick speech-like attack, steady sustain, quick fall
+    setslot(0, 1,  1,   0, 106,  94,  150, 160,  220, 45, 0.60, 0.70);
+    setslot(1, 1, 11,  30, 105,  99,  120, 140,  200, 35, 0.55, 0.70);
+    setslot(2, 1,  7,  95, 106, 100,  140, 150,  210,  0, 0.60, 0.70);
+    setslot(3, 1, 21,   0,  72,  66,  200, 200,  260, 20, 0.70, 0.75);
+  ) : (
+    // Default: neutral, usable on anything
+    setslot(0, 1,  1,   0, 100,  90,  250, 200,  400, 40, 1.00, 1.00);
+    setslot(1, 1, 11,  20, 100,  95,  200, 150,  350, 30, 1.00, 1.00);
+    setslot(2, 1,  7,  95, 105, 100,  220, 180,  360,  0, 1.00, 1.00);
+    setslot(3, 1, 21,   0,  70,  65,  400, 250,  500, 20, 1.20, 1.10);
+  );
+);
+
+function clear_slot(s) (
+  setslot(s, 0, -1, 0, 100, 90, 250, 200, 400, 40, 1.00, 1.00);
+);
+
+function reset_runtime() local(i) (
+  i = 0;
+  while (i < NSLOTS) (
+    r_stage[i] = 0;
+    r_t[i]     = 0;
+    r_val[i]   = s_floor[i];
+    r_start[i] = s_floor[i];
+    r_relst[i] = s_floor[i];
+    r_last[i]  = -1;
+    r_vsc[i]   = 1;
+    i += 1;
+  );
+  i = 0;
+  while (i < 128) ( notes_base[i] = 0; i += 1; );
+  note_cnt   = 0;
+  pedal_down = 0;
+  primed     = 0;
+);
+
+function send_cc(off, s, v) local(ch) (
+  ch = out_chan_sel > 0 ? out_chan_sel - 1 : last_chan;
+  midisend(off, 0xB0 | ch, s_cc[s], v);
+);
+
+function emit(off, s, v) local(iv) (
+  iv = clampv(floor(v + 0.5), 0, 127);
+  iv != r_last[s] ? ( r_last[s] = iv; send_cc(off, s, iv); );
+);
+
+function slot_live(s) ( s_en[s] && s_cc[s] >= 0 && s_cc[s] <= 127 );
+
+function env_tick(dt, off) local(i, st, t, fl, pk, su, v, dur, done) (
+  i = 0;
+  while (i < NSLOTS) (
+    slot_live(i) ? (
+      st = r_stage[i];
+      fl = s_floor[i];
+      pk = fl + (s_peak[i] - fl) * r_vsc[i] * depth;
+      su = fl + (s_sus[i]  - fl) * r_vsc[i] * depth;
+      t  = r_t[i] + dt;
+      v  = r_val[i];
+      done = 0;
+      while (!done) (
+        st == 1 ? (
+          dur = s_atk[i] * 0.001 * tscale;
+          t >= dur ? ( t -= dur; st = 2; ) : (
+            v = r_start[i] + (pk - r_start[i]) * curve_at(ca_base, i, t / dur);
+            done = 1;
+          );
+        ) : st == 2 ? (
+          dur = s_dcy[i] * 0.001 * tscale;
+          t >= dur ? ( t -= dur; st = 3; ) : (
+            v = pk + (su - pk) * (t / dur);
+            done = 1;
+          );
+        ) : st == 3 ? (
+          v = su;
+          done = 1;
+        ) : st == 4 ? (
+          dur = s_rel[i] * 0.001 * tscale;
+          t >= dur ? ( st = 0; t = 0; ) : (
+            v = r_relst[i] + (fl - r_relst[i]) * curve_at(cr_base, i, t / dur);
+            done = 1;
+          );
+        ) : (
+          v = fl;
+          t = 0;
+          done = 1;
+        );
+      );
+      r_stage[i] = st;
+      r_t[i]     = t;
+      r_val[i]   = v;
+      engine_on ? emit(off, i, v);
+    );
+    i += 1;
+  );
+);
+
+function advance(target) local(n) (
+  while (cur_pos < target) (
+    n = min(step_samples - step_phase, target - cur_pos);
+    cur_pos    += n;
+    step_phase += n;
+    step_phase >= step_samples ? (
+      step_phase -= step_samples;
+      env_tick(step_samples / srate, cur_pos);
+    );
+  );
+);
+
+function start_env(vel, off) local(i, va) (
+  i = 0;
+  while (i < NSLOTS) (
+    r_start[i] = r_stage[i] == 0 ? s_floor[i] : r_val[i];
+    r_val[i]   = r_start[i];
+    r_stage[i] = 1;
+    r_t[i]     = 0;
+    va         = s_vel[i] * 0.01;
+    r_vsc[i]   = 1 - va + va * (vel / 127);
+    (slot_live(i) && engine_on) ? emit(off, i, r_start[i]);
+    i += 1;
+  );
+);
+
+function release_env() local(i) (
+  i = 0;
+  while (i < NSLOTS) (
+    r_stage[i] != 0 ? (
+      r_relst[i] = r_val[i];
+      r_stage[i] = 4;
+      r_t[i]     = 0;
+    );
+    i += 1;
+  );
+);
+
+function all_notes_off() local(i) (
+  i = 0;
+  while (i < 128) ( notes_base[i] = 0; i += 1; );
+  note_cnt   = 0;
+  pedal_down = 0;
+  release_env();
+);
+
+function handle_event(off, m1, m2, m3) local(st, ch) (
+  st = m1 & 0xF0;
+  ch = m1 & 0x0F;
+  (in_chan_sel == 0 || ch == in_chan_sel - 1) ? (
+    (st == 0x90 && m3 > 0) ? (
+      last_chan = ch;
+      notes_base[m2] ? 0 : ( notes_base[m2] = 1; note_cnt += 1; );
+      (note_cnt == 1 || retrig_mode) ? start_env(m3, off);
+    ) : (st == 0x80 || (st == 0x90 && m3 == 0)) ? (
+      notes_base[m2] ? ( notes_base[m2] = 0; note_cnt = max(0, note_cnt - 1); );
+      (note_cnt == 0 && !(pedal_hold && pedal_down)) ? release_env();
+    ) : st == 0xB0 ? (
+      m2 == 64 ? (
+        pedal_down = m3 >= 64;
+        (!pedal_down && note_cnt == 0) ? release_env();
+      );
+      (m2 == 120 || m2 == 123) ? all_notes_off();
+    );
+  );
+);
+
+function send_idle() local(i) (
+  i = 0;
+  while (i < NSLOTS) (
+    slot_live(i) ? ( r_last[i] = -1; emit(0, i, s_floor[i]); );
+    i += 1;
+  );
+);
+
+// ---------------------------------------------------------------- first init
+init_done ? 0 : (
+  load_preset(0);
+  clear_slot(4);
+  clear_slot(5);
+  clear_slot(6);
+  reset_runtime();
+  last_preset = 0;
+  sel_slot    = 0;
+  last_chan   = 0;
+  init_done   = 1;
+);
+
+cur_pos     = 0;
+step_phase  = 0;
+step_samples = max(8, floor(srate * 0.005));
+primed      = 0;
+draw_ci     = -1;
+
+@slider
+
+slider1 != last_preset ? (
+  slider1 < 4 ? load_preset(slider1);
+  last_preset = slider1;
+);
+
+depth        = slider2 * 0.01;
+tscale       = slider3 * 0.01;
+retrig_mode  = slider4;
+in_chan_sel  = slider5;
+out_chan_sel = slider6;
+pedal_hold   = slider7;
+step_samples = max(8, floor(srate * slider8 * 0.001));
+pass_thru    = slider9;
+engine_on    = slider10 == 0;
+
+@block
+
+!primed ? ( primed = 1; engine_on ? send_idle(); );
+
+nev = 0;
+while (midirecv(mo, m1, m2, m3)) (
+  nev < EV_MAX ? (
+    ev_base[nev * 4]     = mo;
+    ev_base[nev * 4 + 1] = m1;
+    ev_base[nev * 4 + 2] = m2;
+    ev_base[nev * 4 + 3] = m3;
+    nev += 1;
+  ) : (
+    pass_thru ? midisend(mo, m1, m2, m3);
+  );
+);
+
+cur_pos    = 0;
+ei = 0;
+while (ei < nev) (
+  mo = ev_base[ei * 4];
+  m1 = ev_base[ei * 4 + 1];
+  m2 = ev_base[ei * 4 + 2];
+  m3 = ev_base[ei * 4 + 3];
+  advance(mo);
+  handle_event(mo, m1, m2, m3);   // may emit the starting CC values at this offset
+  pass_thru ? midisend(mo, m1, m2, m3);
+  ei += 1;
+);
+advance(samplesblock);
+
+@serialize
+
+file_var(0, ser_ver);
+file_mem(0, 0, PARAM_LEN);
+file_mem(0, ca_base, NSLOTS * CN);
+file_mem(0, cr_base, NSLOTS * CN);
+(file_avail(0) < 0) ? (
+  0;              // writing
+) : (
+  reset_runtime();
+  last_preset = slider1;
+);
+
+@gfx 820 560
+
+function slot_name(s) (
+  s == 0 ? "Dynamics" :
+  s == 1 ? "Expression" :
+  s == 2 ? "Volume" :
+  s == 3 ? "Aux / Vibrato" :
+  s == 4 ? "User 1" :
+  s == 5 ? "User 2" : "User 3";
+);
+
+function mark_custom() (
+  slider1 != 4 ? (
+    slider1     = 4;
+    last_preset = 4;
+    sliderchange(slider1);
+  );
+);
+
+function btn(x, y, w, h, label, active) local(hot, hit) (
+  hot = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+  active ? setc(0.20, 0.47, 0.72) : hot ? setc(0.26, 0.28, 0.33) : setc(0.17, 0.18, 0.21);
+  gfx_rect(x, y, w, h, 1);
+  setc(0.34, 0.36, 0.41);
+  gfx_rect(x, y, w, h, 0);
+  active ? setc(1, 1, 1) : setc(0.76, 0.79, 0.84);
+  gfx_x = x; gfx_y = y;
+  gfx_drawstr(label, 1 | 4, x + w, y + h);
+  hit = hot && click;
+  hit;
+);
+
+function fmtval(kind, v) (
+  kind == 1 ? sprintf(#g, "%d ms", v) :
+  kind == 2 ? sprintf(#g, "%d %%",  v) :
+  kind == 3 ? sprintf(#g, "%.2f",   v) :
+  kind == 4 ? (v < 0 ? sprintf(#g, "--") : sprintf(#g, "CC%d", v)) :
+              sprintf(#g, "%d", v);
+);
+
+// Drag-to-edit numeric field. Result lands in fld_val, fld_changed says if it moved.
+function field(id, x, y, w, h, label, val, vmn, vmx, kind, editable)
+              local(hot, nv, d) (
+  hot = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+  (editable && hot && click) ? ( drag_id = id; drag_y = mouse_y; drag_v = val; );
+  nv = val;
+  (editable && drag_id == id && (mouse_cap & 1)) ? (
+    d = (drag_y - mouse_y) * (vmx - vmn) / 150;
+    (mouse_cap & 4) ? d *= 0.2;
+    nv = drag_v + d;
+    kind == 3 ? ( nv = floor(nv * 100 + 0.5) / 100; ) : ( nv = floor(nv + 0.5); );
+    nv = clampv(nv, vmn, vmx);
+  );
+  editable ? setc(0.15, 0.16, 0.19) : setc(0.12, 0.13, 0.15);
+  gfx_rect(x, y, w, h, 1);
+  (editable && (hot || drag_id == id)) ? setc(0.38, 0.60, 0.85) : setc(0.28, 0.30, 0.34);
+  gfx_rect(x, y, w, h, 0);
+  setc(0.55, 0.58, 0.63);
+  gfx_setfont(2);
+  gfx_x = x; gfx_y = y + 5;
+  gfx_drawstr(label, 1, x + w, y + 18);
+  gfx_setfont(3);
+  editable ? setc(0.92, 0.94, 0.97) : setc(0.50, 0.52, 0.56);
+  fmtval(kind, nv);
+  gfx_x = x; gfx_y = y + 20;
+  gfx_drawstr(#g, 1, x + w, y + 38);
+  gfx_setfont(1);
+  fld_changed = nv != val;
+  fld_val = nv;
+  fld_changed;
+);
+
+function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) (
+  fl = s_floor[s]; pk = s_peak[s]; su = s_sus[s];
+  n = 28;
+  i = 0;
+  while (i <= n) (
+    p = i / n;
+    v = p < 0.40 ? fl + (pk - fl) * curve_at(ca_base, s, p / 0.40) :
+        p < 0.55 ? pk + (su - pk) * ((p - 0.40) / 0.15) :
+        p < 0.70 ? su :
+                   su + (fl - su) * curve_at(cr_base, s, (p - 0.70) / 0.30);
+    px = x + p * w;
+    py = y + h - (v / 127) * h;
+    i > 0 ? gfx_line(lx, ly, px, py);
+    lx = px; ly = py;
+    i += 1;
+  );
+);
+
+// ---------------------------------------------------------------- frame setup
+click  = (mouse_cap & 1) && !(last_cap & 1);
+!(mouse_cap & 1) ? ( drag_id = 0; draw_ci = -1; );
+
+gfx_setfont(1, "Arial", 15);
+gfx_setfont(2, "Arial", 11);
+gfx_setfont(3, "Arial", 15, 'b');
+gfx_setfont(4, "Arial", 20, 'b');
+gfx_setfont(5, "Arial", 12);
+
+setc(0.086, 0.090, 0.102);
+gfx_rect(0, 0, gfx_w, gfx_h, 1);
+
+// header
+setc(0.118, 0.125, 0.145);
+gfx_rect(0, 0, gfx_w, 46, 1);
+setc(0.22, 0.24, 0.28);
+gfx_line(0, 46, gfx_w, 46);
+
+gfx_setfont(4);
+setc(0.42, 0.72, 0.98);
+gfx_x = 14; gfx_y = 12;
+gfx_drawstr("AutoCC");
+gfx_setfont(2);
+setc(0.55, 0.58, 0.64);
+gfx_x = 100; gfx_y = 19;
+gfx_drawstr("play with both hands - the CCs write themselves");
+
+gfx_setfont(1);
+bw = 88; bh = 26; by = 10; bx = 250;
+btn(bx,            by, bw, bh, "Default",   slider1 == 0) ? ( slider1 = 0; last_preset = 0; load_preset(0); sliderchange(slider1); );
+btn(bx + 94,       by, bw, bh, "Strings",   slider1 == 1) ? ( slider1 = 1; last_preset = 1; load_preset(1); sliderchange(slider1); );
+btn(bx + 188,      by, bw, bh, "Brass",     slider1 == 2) ? ( slider1 = 2; last_preset = 2; load_preset(2); sliderchange(slider1); );
+btn(bx + 282,      by, bw, bh, "Woodwinds", slider1 == 3) ? ( slider1 = 3; last_preset = 3; load_preset(3); sliderchange(slider1); );
+
+slider1 == 4 ? (
+  setc(0.85, 0.65, 0.25);
+  gfx_rect(bx + 378, by, 72, bh, 0);
+  gfx_x = bx + 378; gfx_y = by;
+  gfx_drawstr("CUSTOM", 1 | 4, bx + 450, by + bh);
+);
+
+// ---------------------------------------------------------------- lane list
+lx0 = 12; ly0 = 56; lw = 300;
+setc(0.112, 0.118, 0.135);
+gfx_rect(lx0, ly0, lw, 302, 1);
+setc(0.20, 0.22, 0.26);
+gfx_rect(lx0, ly0, lw, 302, 0);
+
+gfx_setfont(2);
+setc(0.50, 0.53, 0.58);
+gfx_x = lx0 + 10; gfx_y = ly0 + 8;
+gfx_drawstr("CC LANES");
+gfx_x = lx0 + 210; gfx_y = ly0 + 8;
+gfx_drawstr("LIVE");
+
+i = 0;
+while (i < NSLOTS) (
+  ry = ly0 + 28 + i * 38;
+  rh = 34;
+  hot = mouse_x >= lx0 + 4 && mouse_x < lx0 + lw - 4 && mouse_y >= ry && mouse_y < ry + rh;
+  (hot && click && drag_id == 0) ? sel_slot = i;
+
+  sel_slot == i ? setc(0.17, 0.22, 0.29) : hot ? setc(0.14, 0.15, 0.18) : setc(0.125, 0.132, 0.150);
+  gfx_rect(lx0 + 4, ry, lw - 8, rh, 1);
+  sel_slot == i ? ( setc(0.30, 0.60, 0.90); gfx_rect(lx0 + 4, ry, 3, rh, 1); );
+
+  // enable toggle
+  ex = lx0 + 12; ey = ry + 9;
+  ehot = mouse_x >= ex && mouse_x < ex + 16 && mouse_y >= ey && mouse_y < ey + 16;
+  (ehot && click) ? ( s_en[i] = !s_en[i]; sel_slot = i; mark_custom(); );
+  s_en[i] ? setc(0.25, 0.72, 0.45) : setc(0.22, 0.23, 0.26);
+  gfx_rect(ex, ey, 16, 16, 1);
+  setc(0.40, 0.42, 0.47);
+  gfx_rect(ex, ey, 16, 16, 0);
+  s_en[i] ? ( setc(0.05, 0.10, 0.07); gfx_line(ex + 4, ey + 8, ex + 7, ey + 11); gfx_line(ex + 7, ey + 11, ex + 12, ey + 5); );
+
+  // cc number + name
+  gfx_setfont(3);
+  s_cc[i] >= 0 ? ( s_en[i] ? setc(0.93, 0.95, 0.98) : setc(0.48, 0.50, 0.55) ) : setc(0.40, 0.42, 0.46);
+  fmtval(4, s_cc[i]);
+  gfx_x = lx0 + 38; gfx_y = ry + 8;
+  gfx_drawstr(#g);
+  gfx_setfont(2);
+  setc(0.52, 0.55, 0.60);
+  gfx_x = lx0 + 96; gfx_y = ry + 11;
+  gfx_drawstr(slot_name(i));
+  i < 4 ? ( setc(0.38, 0.40, 0.44); gfx_x = lx0 + 96; gfx_y = ry + 22; gfx_drawstr("fixed") );
+
+  // mini curve
+  s_en[i] ? setca(0.35, 0.65, 0.95, 0.85) : setca(0.35, 0.37, 0.42, 0.8);
+  draw_mini(lx0 + 176, ry + 6, 52, 22, i);
+
+  // live value
+  lvl = slot_live(i) ? r_val[i] : 0;
+  setc(0.16, 0.17, 0.20);
+  gfx_rect(lx0 + 238, ry + 14, 42, 7, 1);
+  slot_live(i) ? (
+    r_stage[i] ? setc(0.30, 0.80, 0.55) : setc(0.30, 0.36, 0.44);
+    gfx_rect(lx0 + 238, ry + 14, max(1, 42 * lvl / 127), 7, 1);
+  );
+  gfx_setfont(2);
+  setc(0.60, 0.63, 0.68);
+  fmtval(0, floor(lvl + 0.5));
+  gfx_x = lx0 + 238; gfx_y = ry + 1;
+  gfx_drawstr(#g, 1, lx0 + 280, ry + 13);
+
+  i += 1;
+);
+
+gfx_setfont(1);
+
+// ---------------------------------------------------------------- editor
+sel = sel_slot;
+ex0 = 324; ew = gfx_w - ex0 - 12;
+setc(0.112, 0.118, 0.135);
+gfx_rect(ex0, ly0, ew, 302, 1);
+setc(0.20, 0.22, 0.26);
+gfx_rect(ex0, ly0, ew, 302, 0);
+
+gfx_setfont(2);
+setc(0.50, 0.53, 0.58);
+gfx_x = ex0 + 10; gfx_y = ly0 + 8;
+gfx_drawstr("ENVELOPE");
+setc(0.75, 0.80, 0.86);
+fmtval(4, s_cc[sel]);
+gfx_x = ex0 + 76; gfx_y = ly0 + 8;
+gfx_drawstr(#g);
+setc(0.45, 0.48, 0.53);
+gfx_x = ex0 + 128; gfx_y = ly0 + 8;
+gfx_drawstr(slot_name(sel));
+setc(0.42, 0.45, 0.50);
+gfx_x = ex0 + ew - 250; gfx_y = ly0 + 8;
+gfx_drawstr("drag in the rise / fall areas to draw");
+
+// canvas
+cx = ex0 + 10; cy = ly0 + 28; cw = ew - 20; chh = 258;
+setc(0.070, 0.074, 0.086);
+gfx_rect(cx, cy, cw, chh, 1);
+
+// grid
+setc(0.15, 0.16, 0.19);
+gi = 1;
+while (gi < 4) ( gfx_line(cx, cy + chh * gi / 4, cx + cw, cy + chh * gi / 4); gi += 1; );
+
+fl = s_floor[sel]; pk = s_peak[sel]; su = s_sus[sel];
+ta = s_atk[sel]; td = s_dcy[sel]; tr = s_rel[sel];
+th = max(150, (ta + td + tr) * 0.30);
+tot = max(1, ta + td + th + tr);
+
+xa1 = cx + cw * ta / tot;
+xd1 = cx + cw * (ta + td) / tot;
+xs1 = cx + cw * (ta + td + th) / tot;
+
+// stage bands
+setca(0.30, 0.60, 0.95, 0.07); gfx_rect(cx, cy, xa1 - cx, chh, 1);
+setca(0.95, 0.75, 0.30, 0.05); gfx_rect(xa1, cy, xs1 - xa1, chh, 1);
+setca(0.95, 0.40, 0.40, 0.07); gfx_rect(xs1, cy, cx + cw - xs1, chh, 1);
+setc(0.22, 0.24, 0.28);
+gfx_line(xa1, cy, xa1, cy + chh);
+gfx_line(xd1, cy, xd1, cy + chh);
+gfx_line(xs1, cy, xs1, cy + chh);
+
+// floor line
+setca(0.45, 0.48, 0.55, 0.6);
+fy = cy + chh - (fl / 127) * chh;
+gfx_line(cx, fy, cx + cw, fy);
+
+// ---- drawing interaction
+inside = mouse_x >= cx && mouse_x < cx + cw && mouse_y >= cy - 6 && mouse_y < cy + chh + 6;
+(inside && click && drag_id == 0) ? ( drag_id = 20; draw_ci = -1; );
+
+(drag_id == 20 && (mouse_cap & 1)) ? (
+  mval = clampv((1 - (mouse_y - cy) / chh) * 127, 0, 127);
+  reg = -1; pp = 0;
+  mouse_x < xa1 && xa1 > cx ? (
+    reg = 0; pp = (mouse_x - cx) / (xa1 - cx);
+  ) : mouse_x >= xs1 && (cx + cw) > xs1 ? (
+    reg = 1; pp = (mouse_x - xs1) / (cx + cw - xs1);
+  );
+  reg >= 0 ? (
+    nrm = reg == 0 ?
+      (abs(pk - fl) < 0.5 ? 0 : (mval - fl) / (pk - fl)) :
+      (abs(fl - su) < 0.5 ? 0 : (mval - su) / (fl - su));
+    nrm = clampv(nrm, 0, 1);
+    ci  = clampv(floor(pp * (CN - 1) + 0.5), 0, CN - 1);
+    tb  = reg == 0 ? ca_base : cr_base;
+    (draw_ci >= 0 && draw_reg == reg && draw_ci != ci) ? (
+      st1 = min(draw_ci, ci); st2 = max(draw_ci, ci);
+      v1  = draw_ci < ci ? draw_val : nrm;
+      v2  = draw_ci < ci ? nrm : draw_val;
+      k = st1;
+      while (k <= st2) (
+        tb[sel * CN + k] = v1 + (v2 - v1) * (st2 > st1 ? (k - st1) / (st2 - st1) : 1);
+        k += 1;
+      );
+    ) : (
+      tb[sel * CN + ci] = nrm;
+    );
+    tb[sel * CN] = 0;
+    tb[sel * CN + CN - 1] = 1;
+    draw_ci = ci; draw_reg = reg; draw_val = nrm;
+    mark_custom();
+  );
+);
+
+// ---- envelope trace
+setc(0.36, 0.72, 1.00);
+px = 0;
+while (px <= cw) (
+  tt = px / cw * tot;
+  v = tt < ta ? fl + (pk - fl) * curve_at(ca_base, sel, ta > 0 ? tt / ta : 1) :
+      tt < ta + td ? pk + (su - pk) * (td > 0 ? (tt - ta) / td : 1) :
+      tt < ta + td + th ? su :
+      su + (fl - su) * curve_at(cr_base, sel, tr > 0 ? (tt - ta - td - th) / tr : 1);
+  vy = cy + chh - clampv(v, 0, 127) / 127 * chh;
+  px > 0 ? (
+    gfx_line(lastpx, lastpy, cx + px, vy);
+    setca(0.36, 0.72, 1.00, 0.10);
+    gfx_line(cx + px, vy, cx + px, cy + chh);
+    setc(0.36, 0.72, 1.00);
+  );
+  lastpx = cx + px; lastpy = vy;
+  px += 1;
+);
+
+// ---- live readout on the canvas
+slot_live(sel) ? (
+  ly = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
+  r_stage[sel] ? setca(0.35, 0.90, 0.60, 0.9) : setca(0.45, 0.50, 0.58, 0.5);
+  gfx_line(cx, ly, cx + cw, ly);
+  gfx_rect(cx + cw - 5, ly - 2, 5, 5, 1);
+);
+
+gfx_setfont(2);
+setca(0.55, 0.75, 1.00, 0.8); gfx_x = cx + 4;  gfx_y = cy + chh - 16; gfx_drawstr("RISE");
+setca(0.95, 0.85, 0.55, 0.8); gfx_x = xa1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("SUSTAIN");
+setca(1.00, 0.60, 0.60, 0.8); gfx_x = xs1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("FALL");
+gfx_setfont(1);
+
+// ---------------------------------------------------------------- fields
+fgap = 6; fw = floor((gfx_w - 24 - fgap * 4) / 5); fh = 46;
+fy1 = ly0 + 308; fy2 = fy1 + fh + 6;
+
+fx = lx0;
+field(10, fx, fy1, fw, fh, "CC NUMBER", s_cc[sel], -1, 127, 4, sel >= 4) ? ( s_cc[sel] = fld_val; r_last[sel] = -1; mark_custom(); );
+field(1, fx + (fw + fgap),     fy1, fw, fh, "FLOOR",   s_floor[sel], 0, 127, 0, 1) ? ( s_floor[sel] = fld_val; mark_custom(); );
+field(2, fx + (fw + fgap) * 2, fy1, fw, fh, "PEAK",    s_peak[sel],  0, 127, 0, 1) ? ( s_peak[sel]  = fld_val; mark_custom(); );
+field(3, fx + (fw + fgap) * 3, fy1, fw, fh, "SUSTAIN", s_sus[sel],   0, 127, 0, 1) ? ( s_sus[sel]   = fld_val; mark_custom(); );
+field(4, fx + (fw + fgap) * 4, fy1, fw, fh, "VELOCITY",s_vel[sel],   0, 100, 2, 1) ? ( s_vel[sel]   = fld_val; mark_custom(); );
+
+field(5, fx,                   fy2, fw, fh, "RISE",    s_atk[sel], 0, 8000, 1, 1) ? ( s_atk[sel] = fld_val; mark_custom(); );
+field(6, fx + (fw + fgap),     fy2, fw, fh, "SETTLE",  s_dcy[sel], 0, 8000, 1, 1) ? ( s_dcy[sel] = fld_val; mark_custom(); );
+field(7, fx + (fw + fgap) * 2, fy2, fw, fh, "FALL",    s_rel[sel], 0, 8000, 1, 1) ? ( s_rel[sel] = fld_val; mark_custom(); );
+field(8, fx + (fw + fgap) * 3, fy2, fw, fh, "RISE SHAPE", s_aexp[sel], 0.10, 6, 3, 1) ? ( s_aexp[sel] = fld_val; mkcurve(ca_base, sel, fld_val); mark_custom(); );
+field(9, fx + (fw + fgap) * 4, fy2, fw, fh, "FALL SHAPE", s_rexp[sel], 0.10, 6, 3, 1) ? ( s_rexp[sel] = fld_val; mkcurve(cr_base, sel, fld_val); mark_custom(); );
+
+// ---------------------------------------------------------------- buttons
+uy = fy2 + fh + 10;
+btn(lx0, uy, 120, 26, "Reset Curves", 0) ? (
+  mkcurve(ca_base, sel, s_aexp[sel]); mkcurve(cr_base, sel, s_rexp[sel]); mark_custom();
+);
+btn(lx0 + 126, uy, 120, 26, "Copy Shape To All", 0) ? (
+  i = 0;
+  while (i < NSLOTS) (
+    i != sel ? (
+      k = 0;
+      while (k < CN) (
+        ca_base[i * CN + k] = ca_base[sel * CN + k];
+        cr_base[i * CN + k] = cr_base[sel * CN + k];
+        k += 1;
+      );
+      s_atk[i] = s_atk[sel]; s_dcy[i] = s_dcy[sel]; s_rel[i] = s_rel[sel];
+      s_aexp[i] = s_aexp[sel]; s_rexp[i] = s_rexp[sel];
+    );
+    i += 1;
+  );
+  mark_custom();
+);
+sel >= 4 ? (
+  btn(lx0 + 252, uy, 100, 26, "Clear Lane", 0) ? ( clear_slot(sel); mark_custom(); );
+);
+btn(gfx_w - 132, uy, 120, 26, "Panic / Reset", 0) ? ( all_notes_off(); reset_runtime(); );
+
+// ---------------------------------------------------------------- footer
+gfx_setfont(5);
+setc(0.42, 0.45, 0.50);
+gfx_x = lx0; gfx_y = uy + 36;
+gfx_drawstr("CC1 / CC11 / CC7 / CC21 are fixed lanes. Lanes 5-7 are yours: set a CC number, then draw its curve.");
+gfx_x = lx0; gfx_y = uy + 52;
+gfx_drawstr("Drag any field to edit (hold Ctrl for fine). Save your own presets with the FX window's + button - curves are stored with them.");
+gfx_setfont(1);
+
+last_cap = mouse_cap;
