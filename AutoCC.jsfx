@@ -11,6 +11,7 @@ about:
 
 in_pin:none
 out_pin:none
+options:no_meter
 
 slider1:0<0,4,1{Default,Strings,Brass,Woodwinds,Custom}>Instrument Preset
 slider2:100<0,200,1>Master Depth (%)
@@ -208,6 +209,9 @@ function snap_read(addr) local(i, want) (
   );
 );
 
+// Drops the oldest entry when a stack is full. The memcpy overlaps itself,
+// which JSFX only defines while neither buffer crosses a 65536-slot boundary -
+// both stacks sit entirely below 65536 and must stay there.
 function hist_push(base, n) (
   n >= U_MAX ? ( memcpy(base, base + SNAP_W, (U_MAX - 1) * SNAP_W); n = U_MAX - 1; );
   n;
@@ -215,6 +219,7 @@ function hist_push(base, n) (
 
 // Instantaneous edits (buttons, toggles): snapshot the state we are leaving.
 function push_undo() (
+  undo_pt = 1;
   u_n = hist_push(u_base, u_n);
   snap_write(u_base + u_n * SNAP_W);
   u_n += 1;
@@ -229,6 +234,7 @@ function arm_undo() ( snap_write(stage_base); stage_armed = 1; );
 function commit_undo() (
   stage_armed ? (
     stage_armed = 0;
+    undo_pt = 1;
     u_n = hist_push(u_base, u_n);
     memcpy(u_base + u_n * SNAP_W, stage_base, SNAP_W);
     u_n += 1;
@@ -630,7 +636,10 @@ function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) 
 click  = (mouse_cap & 1) && !(last_cap & 1);
 !(mouse_cap & 1) ? ( drag_id = 0; draw_ci = -1; stage_armed = 0; );
 
-// Ctrl+Z / Ctrl+Y while the plugin window has focus
+// gfx_getchar() must be called at least once per frame for mouse_cap to carry
+// keyboard modifiers when the mouse is not captured - the Ctrl fine-adjust in
+// field() depends on it. Ctrl+Z/Ctrl+Y only arrive as 26/25 when the user has
+// enabled "Send all keyboard input to plug-in"; the buttons always work.
 while ((kc = gfx_getchar()) > 0) (
   kc == 26 ? do_undo() : kc == 25 ? do_redo();
 );
@@ -927,7 +936,12 @@ setc(0.42, 0.45, 0.50);
 gfx_x = lx0; gfx_y = uy + 36;
 gfx_drawstr("CC1 / CC11 / CC7 / CC21 are fixed lanes. Lanes 5-7 are yours: set a CC number, then draw its curve.");
 gfx_x = lx0; gfx_y = uy + 52;
-gfx_drawstr("Green box mutes a lane (also on sliders 11-17). Drag any field to edit, Ctrl for fine. Undo/Redo = Ctrl+Z / Ctrl+Y, 32 steps.");
+gfx_drawstr("Green box mutes a lane (also on sliders 11-17). Drag any field to edit, Ctrl for fine. Undo/Redo is 32 steps deep.");
 gfx_setfont(1);
+
+// sliderchange(-1) from @gfx asks REAPER to add a project undo point, which
+// snapshots the serialized curve data too. Deferring to mouse-up means one
+// point per gesture rather than one per frame.
+(undo_pt && !(mouse_cap & 1)) ? ( sliderchange(-1); undo_pt = 0; );
 
 last_cap = mouse_cap;
