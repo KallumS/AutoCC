@@ -198,6 +198,33 @@ Timing: `@block` collects MIDI into a queue, then advances the envelope
 is emitted **before** the note-on is forwarded, because libraries latch dynamics
 at note-on. CCs are only sent when the rounded 0–127 value changes.
 
+### Palette
+A shared scheme carried over from another project. Constants live at the top of
+`@init`; **every** colour goes through `setx(packed_hex)` / `setxa(hex, alpha)`.
+The raw-RGB helpers were deleted on purpose so nothing can slip past the scheme.
+
+Three rules that are easy to break:
+
+1. **Every grey satisfies R < G < B.** A neutral grey at the same lightness reads
+   flat beside the accent. `C_ACCENT` (#FFF200) and `C_WARN` (#D2483F) are the
+   only entries off that ramp.
+2. **Dark ink on every button, chosen or not.** `C_CTRL` and `C_ACCENT` are both
+   far lighter than the ground, so `C_TEXT` on them is about 1.6:1 — invisible.
+   `btn()` therefore draws `C_INK` unconditionally. Contrast against `C_INK` is
+   8.2:1 on the grey and 15.4:1 on the accent. The trap is that the *chosen*
+   button looks fine while the rest go unreadable, so a bug here hides.
+3. **Hover and held are derived, not stored.** `shade(c, ±HOVER_F)` shifts toward
+   white or black at runtime, so re-tinting means changing `C_ACCENT` alone. The
+   greys use the ramp's own `C_CTRL_H` / `C_CTRL_D` entries since those are
+   published values rather than computed ones.
+
+`C_WARN` is reserved for warnings (currently only ENGINE = BYPASSED). Never use
+it decoratively — the point is that a warning can't be mistaken for a selection,
+which is also why the canvas stage bands are grey steps rather than hues.
+
+`docs/palette-preview.svg` is a component mock whose colours are parsed out of
+`AutoCC.jsfx`, so regenerate it rather than hand-editing if the scheme changes.
+
 ### The UI is the only surface
 All 19 sliders are declared with a `-` prefix, which hides the standard slider
 panel while keeping each parameter live and automatable. That means **every

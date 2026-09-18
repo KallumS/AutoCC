@@ -84,8 +84,58 @@ rd_base    = 38912;                        // redo stack
 
 ser_ver = SER_V;
 
-function setc(r, g, b) ( gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = 1; );
-function setca(r, g, b, a) ( gfx_r = r; gfx_g = g; gfx_b = b; gfx_a = a; );
+// ---------------------------------------------------------------- palette
+// Shared scheme. Every grey satisfies R < G < B - that is the load-bearing
+// property, because a neutral grey at the same lightness reads flat next to the
+// accent. Accent and warning are the only two entries off that ramp.
+C_ACCENT = 0xFFF200;   // chosen buttons, checkmarks, active grabs, MIDI
+C_CTRL   = 0xA9AFBA;   // unchosen buttons
+C_CTRL_H = 0xC0C6CF;   // button hover
+C_CTRL_D = 0x8F96A2;   // button held
+C_INK    = 0x14171C;   // text on ANY button, and button borders
+C_WARN   = 0xD2483F;   // warnings only - never a shade of the accent
+C_ROLL   = 0x111419;   // deepest ground: the envelope canvas
+C_SUNK   = 0x1A1D23;   // sunken frames, panels
+C_POPUP  = 0x1B1F25;   // lane rows
+C_BEAT   = 0x1E2228;   // grid lines, the held band
+C_HOVER  = 0x22262D;   // frame hover
+C_GROUND = 0x23272E;   // window chrome
+C_ACTIVE = 0x2A2F37;   // frame active
+C_SEP    = 0x3A404A;   // separators, borders
+C_DIM    = 0x8A919C;   // disabled and secondary text
+C_TEXT   = 0xDDE1E7;   // body text
+C_PLAY   = 0xF2F4F7;   // playhead
+
+// Raw-RGB helpers are deliberately absent: every colour goes through setx() so
+// nothing can slip past the scheme.
+function setx(c) (
+  gfx_r = ((c / 65536) | 0) / 255;
+  gfx_g = ((((c / 256) | 0) % 256)) / 255;
+  gfx_b = (c % 256) / 255;
+  gfx_a = 1;
+);
+function setxa(c, a) ( setx(c); gfx_a = a; );
+
+// Hover and held are derived, not stored: f > 0 shifts toward white, f < 0
+// toward black. The accent's states are computed through here at runtime, so
+// re-tinting the scheme means changing C_ACCENT alone rather than three values.
+function shade(c, f) local(r, g, b) (
+  r = (c / 65536) | 0;
+  g = ((c / 256) | 0) % 256;
+  b = c % 256;
+  f > 0 ? (
+    r = r + (255 - r) * f;
+    g = g + (255 - g) * f;
+    b = b + (255 - b) * f;
+  ) : (
+    r = r * (1 + f);
+    g = g * (1 + f);
+    b = b * (1 + f);
+  );
+  ((r | 0) * 65536) + ((g | 0) * 256) + (b | 0);
+);
+HOVER_F =  0.18;
+HELD_F  = -0.18;
 function clampv(v, a, b) ( max(a, min(b, v)) );
 
 function mkcurve(base, s, e) local(i, p) (
@@ -580,13 +630,19 @@ function mark_custom() (
   );
 );
 
-function btn(x, y, w, h, label, active) local(hot, hit) (
-  hot = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
-  active ? setc(0.20, 0.47, 0.72) : hot ? setc(0.26, 0.28, 0.33) : setc(0.17, 0.18, 0.21);
+// Buttons are light fills on a dark ground, so the ink is C_INK on every one of
+// them - chosen and unchosen alike. Body text on C_CTRL would be ~1.6:1.
+function btn(x, y, w, h, label, active) local(hot, held, hit) (
+  hot  = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+  held = hot && (mouse_cap & 1);
+  active ? (
+    held ? setx(shade(C_ACCENT, HELD_F)) : hot ? setx(shade(C_ACCENT, HOVER_F)) : setx(C_ACCENT);
+  ) : (
+    held ? setx(C_CTRL_D) : hot ? setx(C_CTRL_H) : setx(C_CTRL);
+  );
   gfx_rect(x, y, w, h, 1);
-  setc(0.34, 0.36, 0.41);
+  setx(C_INK);
   gfx_rect(x, y, w, h, 0);
-  active ? setc(1, 1, 1) : setc(0.76, 0.79, 0.84);
   gfx_x = x; gfx_y = y;
   gfx_drawstr(label, 1 | 4, x + w, y + h);
   hit = hot && click;
@@ -594,13 +650,14 @@ function btn(x, y, w, h, label, active) local(hot, hit) (
 );
 
 // Like btn() but greys out and stops responding when there is nothing to do.
-function ubtn(x, y, w, h, label, avail) local(hot, hit) (
+function ubtn(x, y, w, h, label, avail) local(hot, held, hit) (
   hot = avail && mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
-  hot ? setc(0.26, 0.28, 0.33) : setc(0.17, 0.18, 0.21);
+  held = hot && (mouse_cap & 1);
+  avail ? ( held ? setx(C_CTRL_D) : hot ? setx(C_CTRL_H) : setx(C_CTRL) ) : setx(C_ACTIVE);
   gfx_rect(x, y, w, h, 1);
-  avail ? setc(0.34, 0.36, 0.41) : setc(0.24, 0.25, 0.29);
+  avail ? setx(C_INK) : setx(C_SEP);
   gfx_rect(x, y, w, h, 0);
-  avail ? setc(0.80, 0.83, 0.88) : setc(0.33, 0.35, 0.39);
+  avail ? setx(C_INK) : setx(C_DIM);
   gfx_x = x; gfx_y = y;
   gfx_drawstr(label, 1 | 4, x + w, y + h);
   hit = hot && click;
@@ -614,11 +671,11 @@ function optctl(id, x, y, w, h, label, val, vmx) local(hot, nv) (
   nv  = val;
   (hot && click)  ? nv = val >= vmx ? 0 : val + 1;
   (hot && rclick) ? nv = val <= 0 ? vmx : val - 1;
-  setc(0.15, 0.16, 0.19);
+  setx(C_SUNK);
   gfx_rect(x, y, w, h, 1);
-  hot ? setc(0.38, 0.60, 0.85) : setc(0.28, 0.30, 0.34);
+  hot ? setx(C_ACCENT) : setx(C_SEP);
   gfx_rect(x, y, w, h, 0);
-  setc(0.55, 0.58, 0.63);
+  setx(C_DIM);
   gfx_setfont(2);
   gfx_x = x; gfx_y = y + 5;
   gfx_drawstr(label, 1, x + w, y + 18);
@@ -629,9 +686,9 @@ function optctl(id, x, y, w, h, label, val, vmx) local(hot, nv) (
 );
 
 // Draws the value line inside the box optctl() just laid out.
-function ctl_txt(str, r, g, b) (
+function ctl_txt(str, c) (
   gfx_setfont(3);
-  setc(r, g, b);
+  setx(c);
   gfx_x = ctl_x; gfx_y = ctl_y + 20;
   gfx_drawstr(str, 1, ctl_x + ctl_w, ctl_y + 38);
   gfx_setfont(1);
@@ -658,16 +715,16 @@ function field(id, x, y, w, h, label, val, vmn, vmx, kind, editable)
     kind == 3 ? ( nv = floor(nv * 100 + 0.5) / 100; ) : ( nv = floor(nv + 0.5); );
     nv = clampv(nv, vmn, vmx);
   );
-  editable ? setc(0.15, 0.16, 0.19) : setc(0.12, 0.13, 0.15);
+  editable ? setx(C_SUNK) : setx(C_ROLL);
   gfx_rect(x, y, w, h, 1);
-  (editable && (hot || drag_id == id)) ? setc(0.38, 0.60, 0.85) : setc(0.28, 0.30, 0.34);
+  (editable && (hot || drag_id == id)) ? setx(C_ACCENT) : setx(C_SEP);
   gfx_rect(x, y, w, h, 0);
-  setc(0.55, 0.58, 0.63);
+  setx(C_DIM);
   gfx_setfont(2);
   gfx_x = x; gfx_y = y + 5;
   gfx_drawstr(label, 1, x + w, y + 18);
   gfx_setfont(3);
-  editable ? setc(0.92, 0.94, 0.97) : setc(0.50, 0.52, 0.56);
+  editable ? setx(C_TEXT) : setx(C_DIM);
   fmtval(kind, nv);
   gfx_x = x; gfx_y = y + 20;
   gfx_drawstr(#g, 1, x + w, y + 38);
@@ -714,17 +771,17 @@ gfx_setfont(3, "Arial", 15, 'b');
 gfx_setfont(4, "Arial", 20, 'b');
 gfx_setfont(5, "Arial", 12);
 
-setc(0.086, 0.090, 0.102);
+setx(C_INK);
 gfx_rect(0, 0, gfx_w, gfx_h, 1);
 
 // header
-setc(0.118, 0.125, 0.145);
+setx(C_GROUND);
 gfx_rect(0, 0, gfx_w, 46, 1);
-setc(0.22, 0.24, 0.28);
+setx(C_SEP);
 gfx_line(0, 46, gfx_w, 46);
 
 gfx_setfont(4);
-setc(0.42, 0.72, 0.98);
+setx(C_ACCENT);
 gfx_x = 14; gfx_y = 12;
 gfx_drawstr("AutoCC");
 
@@ -736,7 +793,7 @@ bx = max(300, gfx_w - 464);
 
 bx > 360 ? (
   gfx_setfont(2);
-  setc(0.55, 0.58, 0.64);
+  setx(C_DIM);
   gfx_x = 100; gfx_y = 19;
   gfx_drawstr("play with both hands - the CCs write themselves");
   gfx_setfont(1);
@@ -747,7 +804,7 @@ btn(bx + 188,      by, bw, bh, "Brass",     slider1 == 2) ? ( push_undo(); slide
 btn(bx + 282,      by, bw, bh, "Woodwinds", slider1 == 3) ? ( push_undo(); slider1 = 3; last_preset = 3; load_preset(3); sliderchange(slider1); );
 
 slider1 == 4 ? (
-  setc(0.85, 0.65, 0.25);
+  setx(C_ACCENT);
   gfx_rect(bx + 378, by, 72, bh, 0);
   gfx_x = bx + 378; gfx_y = by;
   gfx_drawstr("CUSTOM", 1 | 4, bx + 450, by + bh);
@@ -755,13 +812,13 @@ slider1 == 4 ? (
 
 // ---------------------------------------------------------------- lane list
 lx0 = 12; ly0 = 56; lw = 300;
-setc(0.112, 0.118, 0.135);
+setx(C_SUNK);
 gfx_rect(lx0, ly0, lw, 302, 1);
-setc(0.20, 0.22, 0.26);
+setx(C_SEP);
 gfx_rect(lx0, ly0, lw, 302, 0);
 
 gfx_setfont(2);
-setc(0.50, 0.53, 0.58);
+setx(C_DIM);
 gfx_x = lx0 + 10; gfx_y = ly0 + 8;
 gfx_drawstr("CC LANES");
 gfx_x = lx0 + 210; gfx_y = ly0 + 8;
@@ -774,46 +831,46 @@ while (i < NSLOTS) (
   hot = mouse_x >= lx0 + 4 && mouse_x < lx0 + lw - 4 && mouse_y >= ry && mouse_y < ry + rh;
   (hot && click && drag_id == 0) ? sel_slot = i;
 
-  sel_slot == i ? setc(0.17, 0.22, 0.29) : hot ? setc(0.14, 0.15, 0.18) : setc(0.125, 0.132, 0.150);
+  sel_slot == i ? setx(C_ACTIVE) : hot ? setx(C_HOVER) : setx(C_POPUP);
   gfx_rect(lx0 + 4, ry, lw - 8, rh, 1);
-  sel_slot == i ? ( setc(0.30, 0.60, 0.90); gfx_rect(lx0 + 4, ry, 3, rh, 1); );
+  sel_slot == i ? ( setx(C_ACCENT); gfx_rect(lx0 + 4, ry, 3, rh, 1); );
 
   // enable toggle
   ex = lx0 + 12; ey = ry + 9;
   ehot = mouse_x >= ex && mouse_x < ex + 16 && mouse_y >= ey && mouse_y < ey + 16;
   (ehot && click) ? ( push_undo(); set_en(i, !s_en[i]); sel_slot = i; );
-  s_en[i] ? setc(0.25, 0.72, 0.45) : setc(0.22, 0.23, 0.26);
+  s_en[i] ? setx(C_ACCENT) : setx(C_SUNK);
   gfx_rect(ex, ey, 16, 16, 1);
-  setc(0.40, 0.42, 0.47);
+  s_en[i] ? setx(C_INK) : setx(C_SEP);
   gfx_rect(ex, ey, 16, 16, 0);
-  s_en[i] ? ( setc(0.05, 0.10, 0.07); gfx_line(ex + 4, ey + 8, ex + 7, ey + 11); gfx_line(ex + 7, ey + 11, ex + 12, ey + 5); );
+  s_en[i] ? ( setx(C_INK); gfx_line(ex + 4, ey + 8, ex + 7, ey + 11); gfx_line(ex + 7, ey + 11, ex + 12, ey + 5); );
 
   // cc number + name
   gfx_setfont(3);
-  s_cc[i] >= 0 ? ( s_en[i] ? setc(0.93, 0.95, 0.98) : setc(0.48, 0.50, 0.55) ) : setc(0.40, 0.42, 0.46);
+  s_cc[i] >= 0 ? ( s_en[i] ? setx(C_TEXT) : setx(C_DIM) ) : setx(C_SEP);
   fmtval(4, s_cc[i]);
   gfx_x = lx0 + 38; gfx_y = ry + 8;
   gfx_drawstr(#g);
   gfx_setfont(2);
-  setc(0.52, 0.55, 0.60);
+  setx(C_DIM);
   gfx_x = lx0 + 96; gfx_y = ry + 11;
   gfx_drawstr(slot_name(i));
-  i < 4 ? ( setc(0.38, 0.40, 0.44); gfx_x = lx0 + 96; gfx_y = ry + 22; gfx_drawstr("fixed") );
+  i < 4 ? ( setx(C_SEP); gfx_x = lx0 + 96; gfx_y = ry + 22; gfx_drawstr("fixed") );
 
   // mini curve
-  s_en[i] ? setca(0.35, 0.65, 0.95, 0.85) : setca(0.35, 0.37, 0.42, 0.8);
+  s_en[i] ? setxa(C_ACCENT, 0.85) : setxa(C_SEP, 0.9);
   draw_mini(lx0 + 176, ry + 6, 52, 22, i);
 
   // live value
   lvl = slot_live(i) ? r_val[i] : 0;
-  setc(0.16, 0.17, 0.20);
+  setx(C_ROLL);
   gfx_rect(lx0 + 238, ry + 14, 42, 7, 1);
   slot_live(i) ? (
-    r_stage[i] ? setc(0.30, 0.80, 0.55) : setc(0.30, 0.36, 0.44);
+    r_stage[i] ? setx(C_ACCENT) : setx(C_SEP);
     gfx_rect(lx0 + 238, ry + 14, max(1, 42 * lvl / 127), 7, 1);
   );
   gfx_setfont(2);
-  setc(0.60, 0.63, 0.68);
+  setx(C_DIM);
   fmtval(0, floor(lvl + 0.5));
   gfx_x = lx0 + 238; gfx_y = ry + 1;
   gfx_drawstr(#g, 1, lx0 + 280, ry + 13);
@@ -826,33 +883,33 @@ gfx_setfont(1);
 // ---------------------------------------------------------------- editor
 sel = sel_slot;
 ex0 = 324; ew = gfx_w - ex0 - 12;
-setc(0.112, 0.118, 0.135);
+setx(C_SUNK);
 gfx_rect(ex0, ly0, ew, 302, 1);
-setc(0.20, 0.22, 0.26);
+setx(C_SEP);
 gfx_rect(ex0, ly0, ew, 302, 0);
 
 gfx_setfont(2);
-setc(0.50, 0.53, 0.58);
+setx(C_DIM);
 gfx_x = ex0 + 10; gfx_y = ly0 + 8;
 gfx_drawstr("ENVELOPE");
-setc(0.75, 0.80, 0.86);
+setx(C_TEXT);
 fmtval(4, s_cc[sel]);
 gfx_x = ex0 + 76; gfx_y = ly0 + 8;
 gfx_drawstr(#g);
-setc(0.45, 0.48, 0.53);
+setx(C_DIM);
 gfx_x = ex0 + 128; gfx_y = ly0 + 8;
 gfx_drawstr(slot_name(sel));
-setc(0.42, 0.45, 0.50);
+setx(C_SEP);
 gfx_x = ex0 + ew - 250; gfx_y = ly0 + 8;
 gfx_drawstr("drag in the rise / fall areas to draw");
 
 // canvas
 cx = ex0 + 10; cy = ly0 + 28; cw = ew - 20; chh = 258;
-setc(0.070, 0.074, 0.086);
+setx(C_ROLL);
 gfx_rect(cx, cy, cw, chh, 1);
 
 // grid
-setc(0.15, 0.16, 0.19);
+setx(C_BEAT);
 gi = 1;
 while (gi < 4) ( gfx_line(cx, cy + chh * gi / 4, cx + cw, cy + chh * gi / 4); gi += 1; );
 
@@ -870,16 +927,18 @@ xd1 = cx + cw * (ta + td) / tot;
 xs1 = cx + cw * (ta + td + th) / tot;
 
 // stage bands
-setca(0.30, 0.60, 0.95, 0.07); gfx_rect(cx, cy, xa1 - cx, chh, 1);
-setca(0.95, 0.75, 0.30, 0.05); gfx_rect(xa1, cy, xs1 - xa1, chh, 1);
-setca(0.95, 0.40, 0.40, 0.07); gfx_rect(xs1, cy, cx + cw - xs1, chh, 1);
-setc(0.22, 0.24, 0.28);
+// Bands are grey steps, not hues: the scheme keeps red for warnings only, so a
+// coloured band could be misread as an alert.
+setx(C_SUNK); gfx_rect(cx,  cy, xa1 - cx,        chh, 1);
+setx(C_BEAT); gfx_rect(xa1, cy, xs1 - xa1,       chh, 1);
+setx(C_SUNK); gfx_rect(xs1, cy, cx + cw - xs1,   chh, 1);
+setx(C_SEP);
 gfx_line(xa1, cy, xa1, cy + chh);
 gfx_line(xd1, cy, xd1, cy + chh);
 gfx_line(xs1, cy, xs1, cy + chh);
 
 // floor line
-setca(0.45, 0.48, 0.55, 0.6);
+setxa(C_SEP, 0.8);
 fy = cy + chh - (fl / 127) * chh;
 gfx_line(cx, fy, cx + cw, fy);
 
@@ -923,7 +982,7 @@ inside = mouse_x >= cx && mouse_x < cx + cw && mouse_y >= cy - 6 && mouse_y < cy
 );
 
 // ---- envelope trace
-setc(0.36, 0.72, 1.00);
+setx(C_ACCENT);
 px = 0;
 while (px <= cw) (
   tt = px / cw * tot;
@@ -934,9 +993,9 @@ while (px <= cw) (
   vy = cy + chh - clampv(v, 0, 127) / 127 * chh;
   px > 0 ? (
     gfx_line(lastpx, lastpy, cx + px, vy);
-    setca(0.36, 0.72, 1.00, 0.10);
+    setxa(C_ACCENT, 0.10);
     gfx_line(cx + px, vy, cx + px, cy + chh);
-    setc(0.36, 0.72, 1.00);
+    setx(C_ACCENT);
   );
   lastpx = cx + px; lastpy = vy;
   px += 1;
@@ -958,18 +1017,18 @@ while (px <= cw) (
   phx = cx + cw * clampv(pt, 0, tot) / tot;
   phy = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
 
-  setca(0.35, 0.90, 0.60, 0.30);
+  setxa(C_PLAY, 0.35);
   gfx_line(phx, cy, phx, cy + chh);
-  setca(0.35, 0.90, 0.60, 0.22);
+  setxa(C_ACCENT, 0.22);
   gfx_circle(phx, phy, 8, 0, 1);
-  setca(0.40, 0.95, 0.65, 1.00);
+  setx(C_ACCENT);
   gfx_circle(phx, phy, 4, 1, 1);
 
   // Value rides beside the dot, flipping left near the right edge.
   gfx_setfont(3);
   fmtval(0, floor(r_val[sel] + 0.5));
   gfx_measurestr(#g, mw, mh);
-  setca(0.50, 1.00, 0.72, 0.95);
+  setx(C_ACCENT);
   gfx_x = (phx + 10 + mw) > (cx + cw) ? phx - 10 - mw : phx + 10;
   gfx_y = clampv(phy - mh * 0.5, cy + 2, cy + chh - mh - 2);
   gfx_drawstr(#g);
@@ -977,12 +1036,12 @@ while (px <= cw) (
 );
 
 gfx_setfont(2);
-setca(0.55, 0.75, 1.00, 0.8); gfx_x = cx + 4;  gfx_y = cy + chh - 16; gfx_drawstr("RISE");
+setx(C_DIM); gfx_x = cx + 4;  gfx_y = cy + chh - 16; gfx_drawstr("RISE");
 (xs1 - xa1) > 34 ? (
-  setca(0.95, 0.85, 0.55, 0.8); gfx_x = xa1 + 4; gfx_y = cy + chh - 16;
+  setx(C_DIM); gfx_x = xa1 + 4; gfx_y = cy + chh - 16;
   gfx_drawstr(env_mode == 1 ? "HOLD" : "SUSTAIN");
 );
-setca(1.00, 0.60, 0.60, 0.8); gfx_x = xs1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("FALL");
+setx(C_DIM); gfx_x = xs1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("FALL");
 gfx_setfont(1);
 
 // ---------------------------------------------------------------- fields
@@ -1045,7 +1104,7 @@ gw2 = floor((gfx_w - 24 - 6 * 5) / 6);
 gy2 = gy + gh + 4;
 
 gfx_setfont(2);
-setc(0.50, 0.53, 0.58);
+setx(C_DIM);
 gfx_x = lx0; gfx_y = gy - 14;
 gfx_drawstr("GLOBAL");
 gfx_setfont(1);
@@ -1054,8 +1113,7 @@ gfx_setfont(1);
 gxp = lx0;
 optctl(33, gxp, gy, gw1, gh, "MODE", slider18, 2) ?
   ( slider18 = fld_val; sliderchange(slider18); apply_sliders(); undo_pt = 1; );
-ctl_txt(slider18 == 0 ? "Gated" : slider18 == 1 ? "One-shot" : "ADR",
-        0.92, 0.94, 0.97);
+ctl_txt(slider18 == 0 ? "Gated" : slider18 == 1 ? "One-shot" : "ADR", C_TEXT);
 
 gxp = lx0 + (gw1 + 6);
 field(39, gxp, gy, gw1, gh, "HOLD", slider19, 0, 10000, 1, slider18 == 1) ?
@@ -1064,7 +1122,7 @@ field(39, gxp, gy, gw1, gh, "HOLD", slider19, 0, 10000, 1, slider18 == 1) ?
 gxp = lx0 + (gw1 + 6) * 2;
 optctl(34, gxp, gy, gw1, gh, "TRIGGER", slider4, 1) ?
   ( slider4 = fld_val; sliderchange(slider4); apply_sliders(); undo_pt = 1; );
-ctl_txt(slider4 ? "Retrigger" : "Legato", 0.92, 0.94, 0.97);
+ctl_txt(slider4 ? "Retrigger" : "Legato", C_TEXT);
 
 gxp = lx0 + (gw1 + 6) * 3;
 field(30, gxp, gy, gw1, gh, "DEPTH", slider2, 0, 200, 2, 1) ?
@@ -1078,24 +1136,24 @@ field(31, gxp, gy, gw1, gh, "TIME", slider3, 10, 400, 2, 1) ?
 gxp = lx0;
 optctl(35, gxp, gy2, gw2, gh, "MIDI IN", slider5, 16) ?
   ( slider5 = fld_val; sliderchange(slider5); apply_sliders(); undo_pt = 1; );
-slider5 > 0 ? ( fmtval(0, slider5); ctl_txt(#g, 0.92, 0.94, 0.97); )
-            : ctl_txt("Omni", 0.92, 0.94, 0.97);
+slider5 > 0 ? ( fmtval(0, slider5); ctl_txt(#g, C_TEXT); )
+            : ctl_txt("Omni", C_TEXT);
 
 gxp = lx0 + (gw2 + 6);
 optctl(36, gxp, gy2, gw2, gh, "CC OUT", slider6, 16) ?
   ( slider6 = fld_val; sliderchange(slider6); apply_sliders(); undo_pt = 1; );
-slider6 > 0 ? ( fmtval(0, slider6); ctl_txt(#g, 0.92, 0.94, 0.97); )
-            : ctl_txt("Follow", 0.92, 0.94, 0.97);
+slider6 > 0 ? ( fmtval(0, slider6); ctl_txt(#g, C_TEXT); )
+            : ctl_txt("Follow", C_TEXT);
 
 gxp = lx0 + (gw2 + 6) * 2;
 optctl(37, gxp, gy2, gw2, gh, "PEDAL", slider7, 1) ?
   ( slider7 = fld_val; sliderchange(slider7); apply_sliders(); undo_pt = 1; );
-ctl_txt(slider7 ? "Holds" : "Ignored", 0.92, 0.94, 0.97);
+ctl_txt(slider7 ? "Holds" : "Ignored", C_TEXT);
 
 gxp = lx0 + (gw2 + 6) * 3;
 optctl(38, gxp, gy2, gw2, gh, "MIDI THRU", slider9, 1) ?
   ( slider9 = fld_val; sliderchange(slider9); apply_sliders(); undo_pt = 1; );
-ctl_txt(slider9 ? "On" : "Off", 0.92, 0.94, 0.97);
+ctl_txt(slider9 ? "On" : "Off", C_TEXT);
 
 gxp = lx0 + (gw2 + 6) * 4;
 field(32, gxp, gy2, gw2, gh, "RATE", slider8, 1, 30, 1, 1) ?
@@ -1104,12 +1162,12 @@ field(32, gxp, gy2, gw2, gh, "RATE", slider8, 1, 30, 1, 1) ?
 gxp = lx0 + (gw2 + 6) * 5;
 optctl(40, gxp, gy2, gw2, gh, "ENGINE", slider10, 1) ?
   ( slider10 = fld_val; sliderchange(slider10); apply_sliders(); undo_pt = 1; );
-slider10 ? ctl_txt("BYPASSED", 1.00, 0.45, 0.45)
-         : ctl_txt("Active", 0.45, 0.90, 0.60);
+slider10 ? ctl_txt("BYPASSED", C_WARN)
+         : ctl_txt("Active", C_TEXT);
 
 // ---------------------------------------------------------------- footer
 gfx_setfont(5);
-setc(0.42, 0.45, 0.50);
+setx(C_SEP);
 gfx_x = lx0; gfx_y = gy2 + gh + 10;
 gfx_drawstr("CC1 / CC11 / CC7 / CC21 are fixed lanes. Lanes 5-7 are yours: set a CC number, then draw its curve.");
 gfx_x = lx0; gfx_y = gy2 + gh + 26;

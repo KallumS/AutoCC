@@ -280,6 +280,21 @@ be exported and shared as `.rpl` banks like any other REAPER preset.
 
 ---
 
+## Appearance
+
+AutoCC uses a shared colour scheme: a cool grey ramp where every grey satisfies
+R < G < B, a single yellow accent (`#FFF200`) for anything chosen or live —
+selected buttons, lane checkmarks, the active drag outline, the envelope curve
+and the playhead dot — and one red (`#D2483F`) reserved strictly for warnings, so
+an alert can never be mistaken for a selection.
+
+Buttons are light fills carrying dark ink (`#14171C`) whether they are selected
+or not, because body text on a `#A9AFBA` button would sit at about 1.6:1. Hover
+and held states for the accent are computed at runtime rather than stored, so
+re-tinting the scheme is a one-value change.
+
+![Palette preview](docs/palette-preview.svg)
+
 ## Global controls
 
 The **GLOBAL** strip along the bottom of the window. `DEPTH`, `TIME` and `RATE`
