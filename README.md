@@ -369,4 +369,4 @@ custom UI keeps working either way.
 
 ## License
 
-MIT
+GNU General Public License v3 - see [LICENSE](LICENSE).
