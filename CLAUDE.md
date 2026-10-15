@@ -184,7 +184,7 @@ or drawn by hand. Exponent **< 1** rises fast early, **> 1** is a slow swell.
 The canvas hold band `th` is the real `hold_ms` in One-shot and 0 in ADR, so the
 drawing is to scale in both; only Gated uses an arbitrary placeholder width,
 since a held note has no length. The middle band's label is suppressed below
-34px and reads HOLD rather than SUSTAIN in One-shot.
+34px and reads Hold rather than Sustain in One-Shot.
 
 The canvas playhead maps runtime state back onto the drawing: stage picks the
 band, and `r_t` is divided by `tscale` because runtime durations are multiplied
@@ -218,7 +218,7 @@ Three rules that are easy to break:
    greys use the ramp's own `C_CTRL_H` / `C_CTRL_D` entries since those are
    published values rather than computed ones.
 
-`C_WARN` is reserved for warnings (currently only ENGINE = BYPASSED). Never use
+`C_WARN` is reserved for warnings (currently only Engine = Bypassed). Never use
 it decoratively — the point is that a warning can't be mistaken for a selection,
 which is also why the canvas stage bands are grey steps rather than hues.
 
@@ -231,7 +231,7 @@ panel while keeping each parameter live and automatable. That means **every
 parameter must have a control in `@gfx`** — adding a slider without one makes it
 unreachable. The GLOBAL strip along the bottom covers sliders 2–10 and 18–19 in
 two rows (envelope, then MIDI routing), the header buttons cover slider 1, and
-the lane list's green boxes cover 11–17.
+the lane list's boxes cover 11–17.
 
 Derived values (`depth`, `tscale`, `step_samples`, …) are computed in
 `apply_sliders()` rather than inline in `@slider`, because `@gfx` writes sliders
@@ -271,6 +271,16 @@ own project undo also captures the edit.
 - Match the existing comment density: explain *why* a constraint exists (the
   65536 memcpy rule, the `@serialize` guard), not what a line does.
 - Don't claim REAPER-verified behaviour that hasn't been REAPER-verified.
+- **Text on screen follows Apple's writing guidelines** (the house rule from
+  Noterator's decision 0053; `docs/sessions/2026-10-14-apple-writing.md`):
+  headings, field and button labels and slider names in title style
+  ("CC Lanes", "Rise Shape", "Copy Shape to All"), hints and the footer in
+  sentence case, an em dash between phrases and as the blank-CC placeholder,
+  an en dash in ranges, curly apostrophes, "Command" spelled out (ysfx's
+  font, and perhaps REAPER's Arial, has no ⌘). Slider descriptions and enum
+  labels may be renamed (REAPER stores values by number); numbering, order and
+  ranges may not. Render after a change: Reverberator's `tools/build/gui`
+  (ysfx) runs this file's `@gfx` as is (`gui AutoCC.jsfx out.bgra 820 660 1`).
 
 ---
 
