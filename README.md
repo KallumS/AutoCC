@@ -200,7 +200,10 @@ again while a key was still down.
 | Rise Shape  | Curve exponent: `<1` fast off the mark, `>1` slow swell       |
 | Fall Shape  | Curve exponent for the release                                |
 
-Drag any field to change it; hold **Command** (Ctrl on Windows) for fine adjustment.
+Drag any field up or down to change it; hold **Command** (Ctrl on Windows) for
+fine adjustment. Or press **Tab** until the field has a white ring round it and
+use the arrow keys — **Shift** makes the steps finer (see *Using it from the
+keyboard* below).
 
 ### Drawing custom curves
 
@@ -227,7 +230,8 @@ every other lane.
 
 ### Undo / redo
 
-**Undo** and **Redo** buttons sit at the left of the action row, with
+**Undo** and **Redo** buttons sit at the left of the row of buttons under the
+fields, with
 **Command-Z** / **Command-Y** (Ctrl+Z / Ctrl+Y on Windows) as shortcuts while the plugin window has focus. History
 is 32 steps deep and covers everything you can change in the GUI: every
 parameter field, every drawn curve, lane mutes, preset button clicks, *Reset
@@ -280,13 +284,76 @@ be exported and shared as `.rpl` banks like any other REAPER preset.
 
 ---
 
+## The window
+
+From the top:
+
+- **The message bar.** Point at any control — or move to it with Tab — and the
+  bar says what it does. When you copy a shape, clear a lane, reset curves or
+  hit Panic, the bar says what happened, and the message **stays until you
+  click Dismiss** (or something newer replaces it); nothing disappears on a
+  timer. If the engine is bypassed, the bar says so. **Options** is at the
+  right of the bar.
+- **Preset** buttons, and **Panic / Reset** on the right.
+- **CC Lanes** and the **Envelope** you draw in.
+- The selected lane's **fields**, then **Undo**, **Redo**, **Reset Curves**,
+  **Copy Shape to All** and (for lanes 5–7) **Clear Lane**.
+- The **Global** settings.
+
+Nothing important sits at the bottom edge, where a window often ends up off the
+screen.
+
+### Interface size
+
+**Options → Interface Size** makes everything in the window larger: 100%,
+125%, 150% or 200%. Every control, word and gap grows together, and the layout
+rearranges when the window is narrow. If the window is too small for the size
+you chose, scroll it with the mouse wheel (or just press Tab — the window
+scrolls to whatever has the focus), or make the FX window larger. The size is
+saved with the project.
+
+On a Retina screen the window draws at full resolution, and the text uses the
+system font (San Francisco on a Mac, Segoe UI on Windows).
+
+### Using it from the keyboard
+
+Click in the AutoCC window first, so it has the keyboard.
+
+| Key | What it does |
+|-----|--------------|
+| **Tab** / **Shift-Tab** | Move to the next / previous control, in reading order. A white ring shows where you are. |
+| **Return** or **Space** | Press the button, tick or untick a lane's box, choose a lane, or step a Global setting on. |
+| **Arrow keys** | Change the field or Global setting that has the ring — up or right to raise it, down or left to lower it. Hold **Shift** for finer steps. |
+| **Esc** | Let go of the ring. |
+| **Command-Z** / **Command-Y** | Undo / redo (when REAPER passes them on — see below). |
+
+Clicking with the mouse hides the ring until you press Tab again.
+
+Drawing a curve freehand needs the mouse; from the keyboard, *Rise Shape* and
+*Fall Shape* set the same curves as smooth shapes, and *Reset Curves* returns to
+them.
+
+Some REAPER set-ups keep certain keys for themselves — Space often starts
+playback. If a key seems to do nothing in the window, use Return instead of
+Space, or turn on **Send all keyboard input to plug-in** in the FX window's
+menu. (AutoCC doesn't switch that on for you, because then Space would no longer
+start playback while you play.) Every setting is also an ordinary REAPER
+parameter, so screen readers such as VoiceOver with the OSARA extension can
+reach them through REAPER's own FX parameter list.
+
 ## Appearance
 
 AutoCC uses a shared colour scheme: a cool grey ramp where every grey satisfies
 R < G < B, a single yellow accent (`#FFF200`) for anything chosen or live —
 selected buttons, lane checkmarks, the active drag outline, the envelope curve
 and the playhead dot — and one red (`#D2483F`) reserved strictly for warnings, so
-an alert can never be mistaken for a selection.
+an alert can never be mistaken for a selection. A warning written in words uses
+a lighter red, `#FF9E96`, because the house red is too dark to read as text.
+
+Every word in the window stands out from what it sits on by at least 7 to 1
+(secondary words are `#B0B6C0`), so labels stay easy to read on a dim screen.
+A chosen preset is yellow **and** carries a dark bar under its name, so it does
+not depend on seeing colour; a lane that is on has a tick as well as the yellow.
 
 Buttons are light fills carrying dark ink (`#14171C`) whether they are selected
 or not, because body text on a `#A9AFBA` button would sit at about 1.6:1. Hover
@@ -297,9 +364,10 @@ re-tinting the scheme is a one-value change.
 
 ## Global controls
 
-The **Global** strip along the bottom of the window. *Depth*, *Time* and *Rate*
+The **Global** strip under the lane's fields. *Depth*, *Time* and *Rate*
 are drag fields like the lane parameters; the other six are click-through
-settings — **left-click advances, right-click steps back**.
+settings — **left-click advances, right-click steps back** (from the keyboard:
+Return advances, the arrow keys go either way).
 
 **Row 1 — envelope**
 
@@ -322,7 +390,7 @@ settings — **left-click advances, right-click steps back**.
 | *Rate*     | 8      | Resolution of the generated CC stream (default 5 ms) |
 | *Engine*   | 10     | Active / Bypassed                                    |
 
-Instrument preset is slider 1 (the header buttons); lane on/off is sliders
+Instrument preset is slider 1 (the preset buttons); lane on/off is sliders
 11–17 (the boxes in the lane list).
 
 ### Why there are no slider rows above the UI
