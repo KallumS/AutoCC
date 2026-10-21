@@ -12,17 +12,19 @@ win and this file should be corrected.
 
 `AutoCC.jsfx` is a single-file REAPER JSFX (EEL2). It turns MIDI notes into
 orchestral CC curves so a player can use both hands on the keys instead of
-riding a mod wheel. There is no build step and no test harness — the file *is*
-the product.
+riding a mod wheel. There is no build step — the file *is* the product. Its
+window has a headless checker in `tools/` (§4).
 
 **How this code has been validated so far:** the envelope maths and the undo
 ring buffer were ported to throwaway Python and exercised (preset shapes, stage
 transitions, zero-length stages, velocity extremes, retrigger mid-release; undo
 round trips, redo clearing, ring overflow both directions). Structure is checked
-with a paren-balance and memory-overlap script. **None of it has been run inside
-REAPER.** Anything touching `@gfx`, `sliderchange`, `gfx_getchar` or
-`@serialize` is verified against the docs only — say so rather than implying it
-has been tested.
+with a paren-balance and memory-overlap script. Since 1.1 the window is checked
+by `tools/uicheck.py`, which runs the real `@gfx` headlessly in ysfx (the same
+EEL2 compiler and LICE drawing REAPER uses) — see §4. **None of it has been run
+inside REAPER.** Anything touching `sliderchange`, `@serialize`, REAPER's
+keyboard routing or its fonts is verified against the docs or ysfx only — say
+so rather than implying it has been tested in REAPER.
 
 ---
 
@@ -104,8 +106,24 @@ may be wrong in `@init`.)
 - `mouse_cap` bits: **1** left, **2** right, **4** Ctrl/Cmd, **8** Shift,
   **16** Alt, **32** Win/Ctrl(macOS), **64** middle.
 - **`gfx_getchar()` must be called at least once per frame for `mouse_cap` to
-  report keyboard modifiers when the mouse is not captured.** AutoCC's Ctrl
-  fine-adjust depends on this.
+  report keyboard modifiers when the mouse is not captured.** AutoCC's Command
+  fine-drag and Shift fine-arrows depend on this. Since 1.1 it is called
+  **once** a frame, into `ui_key`, and each control consumes the key it uses
+  (sets `ui_key = 0`); a second key waits in REAPER's queue for the next frame.
+- Named keys from `gfx_getchar()`: Tab 9, Return 13, Esc 27, Space 32, and the
+  arrows as multi-character constants `'up'` (30064), `'down'`, `'left'`,
+  `'rght'`. Shift+Tab is 9 with `mouse_cap & 8`.
+- `gfx_ext_retina = 1` (set in `@init`) asks for full resolution; on a Retina
+  screen REAPER sets it to 2 and `gfx_w`/`gfx_h` double. Every size in `@gfx`
+  goes through `ui_s = max(1, gfx_ext_retina) * ui_zoom`.
+- `gfx_getfont(#str)` writes the face actually used into `#str`; `pick_font()`
+  uses it to choose San Francisco (`.AppleSystemUIFont`), Segoe UI or Arial.
+  Unverified in REAPER (ysfx accepts it).
+- **ysfx differs from REAPER in two ways that matter to the checker**: it packs
+  the arrow codes the other way round (`'up'` arrives as 0x7075, not 30064), and
+  it puts Shift in `mouse_cap` only while a mouse button is down. So
+  `tools/uicheck.py` hands keys in through `t_getchar()` in its instrumented
+  copy, in REAPER's documented form, rather than through ysfx's key queue.
 - `gfx_getchar()` returns Ctrl+A..Z as **1..26** *only if* the user has enabled
   "Send all keyboard input to plug-in". So Ctrl+Z = 26, Ctrl+Y = 25 are opt-in.
   Don't set `options:want_all_kb` here: it would swallow the spacebar, and this
@@ -134,6 +152,7 @@ may be wrong in `@init`.)
 | Release curves `cr_base` | 800 | 7 × 33 |
 | Note-held flags `notes_base` | 1200 | 128 |
 | MIDI event queue `ev_base` | 2048 | 2048 × 4 |
+| Keyboard focus list `focus_base` (window only) | 10240 | 64 × 6 |
 | Undo staging `stage_base` | 16384 | 640 |
 | Undo stack `u_base` | 17408 | 32 × 640 |
 | Redo stack `rd_base` | 38912 | 32 × 640 |
@@ -206,8 +225,8 @@ The raw-RGB helpers were deleted on purpose so nothing can slip past the scheme.
 Three rules that are easy to break:
 
 1. **Every grey satisfies R < G < B.** A neutral grey at the same lightness reads
-   flat beside the accent. `C_ACCENT` (#FFF200) and `C_WARN` (#D2483F) are the
-   only entries off that ramp.
+   flat beside the accent. `C_ACCENT` (#FFF200), `C_WARN` (#D2483F) and
+   `C_WARN_TEXT` (#FF9E96) are the only entries off that ramp.
 2. **Dark ink on every button, chosen or not.** `C_CTRL` and `C_ACCENT` are both
    far lighter than the ground, so `C_TEXT` on them is about 1.6:1 — invisible.
    `btn()` therefore draws `C_INK` unconditionally. Contrast against `C_INK` is
@@ -221,6 +240,26 @@ Three rules that are easy to break:
 `C_WARN` is reserved for warnings (currently only Engine = Bypassed). Never use
 it decoratively — the point is that a warning can't be mistaken for a selection,
 which is also why the canvas stage bands are grey steps rather than hues.
+**`C_WARN` is never used for words**: it is 3.4:1 on the ground. It marks the
+Engine box's border; the word "Bypassed" and the warning in the message bar are
+`C_WARN_TEXT` (#FF9E96, 7.55:1).
+
+**Text colours (1.1, decision 0001):** every line of text is at least **7:1** on
+what it sits on. Body text `C_TEXT`; secondary text `C_LABEL2` (#B0B6C0: 7.35:1
+on the ground, 8.3:1 on panels); `C_DIM` (#8A919C, 4.7:1) **only** for the
+dimmed label of a control that is off (Undo/Redo with nothing to undo, Hold
+outside One-Shot) and for marks that are not words. `C_SEP` is never text. The
+selected lane row is lighter (`C_ACTIVE`), where `C_LABEL2` would be 6.6:1, so
+its secondary words step up to `C_TEXT`. Words drawn on the canvas sit on a
+small `C_ROLL` plate (`plate_text`) so the curve's fill cannot thin them. The
+focus ring is `C_RING` (#F2F4F7) — never the accent, which means "on".
+
+**Edges and marks (1.2, decision 0001's final sweep):** anything you use or
+read as a shape is at least **3:1** on what it sits on. The edge of a field or
+Global setting and the canvas's stage and floor lines are `C_EDGE` (#6D7581,
+3.4–4.0:1); `C_SEP` is only for panel borders and separators, which group
+rather than act, and for the edge of a field that is off. The canvas grid
+(`C_BEAT`) and the wash under the curve are texture and stay faint.
 
 `docs/palette-preview.svg` is a component mock whose colours are parsed out of
 `AutoCC.jsfx`, so regenerate it rather than hand-editing if the scheme changes.
@@ -229,9 +268,24 @@ which is also why the canvas stage bands are grey steps rather than hues.
 All 19 sliders are declared with a `-` prefix, which hides the standard slider
 panel while keeping each parameter live and automatable. That means **every
 parameter must have a control in `@gfx`** — adding a slider without one makes it
-unreachable. The GLOBAL strip along the bottom covers sliders 2–10 and 18–19 in
-two rows (envelope, then MIDI routing), the header buttons cover slider 1, and
-the lane list's boxes cover 11–17.
+unreachable. The Global strip covers sliders 2–10 and 18–19 in two groups
+(envelope, then MIDI routing), the preset buttons cover slider 1, and the lane
+list's boxes cover 11–17 (through `set_en()`).
+
+### The window's layout (1.1, decision 0001)
+Top to bottom: the **message bar** (fixed; messages, hints, the bypass warning,
+Dismiss and Options), the presets row with Panic / Reset, the lane list and the
+envelope editor side by side (stacked when the window is too narrow), the
+lane's fields in a grid, the action buttons (Undo, Redo, Reset Curves, Copy
+Shape to All, Clear Lane), and the Global strip. Nothing is drawn below the
+last row of controls — the old footer's help now lives in each control's hint.
+The content scrolls (mouse wheel, or Tab scrolling the focus into view) when a
+large interface size does not fit; the bar is drawn last, over it, and
+`inr()` ignores the pointer under it (`hit_top`).
+
+Rows that wrap use `flow(w)`; grids use `cell(n, cols, w, y0)`. Column counts
+come from the window width over a minimum cell width, so the layout reflows
+rather than overflowing sideways.
 
 Derived values (`depth`, `tscale`, `step_samples`, …) are computed in
 `apply_sliders()` rather than inline in `@slider`, because `@gfx` writes sliders
@@ -279,8 +333,54 @@ own project undo also captures the edit.
   an en dash in ranges, curly apostrophes, "Command" spelled out (ysfx's
   font, and perhaps REAPER's Arial, has no ⌘). Slider descriptions and enum
   labels may be renamed (REAPER stores values by number); numbering, order and
-  ranges may not. Render after a change: Reverberator's `tools/build/gui`
-  (ysfx) runs this file's `@gfx` as is (`gui AutoCC.jsfx out.bgra 820 660 1`).
+  ranges may not.
+- **Apple's HIG Foundations** (decision 0001, `docs/apple-hig-review.md`).
+  Rules for new code in `@gfx`:
+  - **every size goes through `ui_s`** (`12 * ui_s`, never a bare `12`), or it
+    will not grow with Interface Size or on a Retina screen;
+  - **every control registers for focus** with `focus_mark(id, x, y, w, h,
+    kind)` as it is drawn (in reading order), can be pressed (`key_press`) or
+    nudged (`key_step`) from the keyboard, and sets a hint that starts with its
+    own name (`hint("Name: what it does.")`). `btn`, `ubtn`, `optctl` and
+    `field` already do all of this; give a new control an id and a name in
+    `NAMES` in `tools/uicheck.py`, and add it to the expected Tab order there;
+  - controls are **28 points tall (`ch`) and 12 apart (`gap`)**; a button's
+    width is `bwid(label, min)`, never narrower than its label;
+  - **every line of text 7:1** (see *Palette*); a chosen control carries a
+    second cue besides the yellow (the ink bar in `btn`, the tick in a box);
+  - **messages go in the bar at the top** with `set_status()`/`sprintf(#status,
+    …)` and stay until Dismiss or the next message — never on a timer. The bar
+    **wraps** (`wrap_text`) and is sized for the longest built-in message, the
+    one passed to `wrap_text` at the frame's start; a new message longer than
+    that one replaces it there, or the bar grows the frame after it appears;
+  - an action that throws away curve edits calls `push_undo()` first and says
+    in the bar that Undo puts it back (1.2) — Undo, not a question;
+  - **an edge or a mark that carries meaning is 3:1** (`C_EDGE`), and a
+    meaningful hover target that is not a control still gets a `hint()`
+    (the canvas does, with `w_id = 0`);
+  - the layout needs **340 points across**; `ui_s` shrinks a large interface
+    to fit a narrower window, never below 100%. A new row wider than that
+    must wrap (`flow`, `cell`) or the 340 must change with it.
+- **Check the window after any change to it** (needs cmake, g++, freetype,
+  fontconfig; the build is about two minutes the first time):
+
+  ```sh
+  tools/build_host.sh                        # once: tools/build/uihost (git-ignored)
+  python3 tools/uicheck.py                   # ~145 checks; --shots DIR writes PNGs
+  python3 tools/uicheck.py --static          # source checks only, no build
+  python3 tools/bite.py "what" "old" "new"   # break it in a copy; must say BIT
+  ```
+
+  `uicheck.py` makes an instrumented copy (every `gfx_drawstr`/`gfx_rect` in
+  `@gfx` logged, with the pixels under each string read before it is drawn)
+  and drives it in ysfx: contrast of every string, clipping, text size,
+  control size and spacing, the Tab order by name, the ring on every stop,
+  Return/Space/arrows/Esc, the ink bar, messages staying, the interface size
+  (menu, saved across a reload, doubling exactly at 200%), Retina, scrolling
+  the focus into view, and the static rules (R < G < B, colours through
+  `setx`, brackets, memory regions, every slider reachable, no
+  `want_all_kb`). **Look at the screenshots too** — the checks see rules, not
+  taste.
 
 ---
 

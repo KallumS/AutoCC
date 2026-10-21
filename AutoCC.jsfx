@@ -1,6 +1,6 @@
 desc:AutoCC - automatic MIDI CC curves for orchestral libraries
 author:AutoCC
-version:1.0
+version:1.2
 tags:MIDI processing controller orchestral expression
 about:
   AutoCC generates orchestral CC curves automatically from incoming MIDI notes.
@@ -84,6 +84,14 @@ rd_base    = 38912;                        // redo stack
 
 ser_ver = SER_V;
 
+// ---- window only (never touched by the audio code)
+focus_base = 10240;   // keyboard focus list: FOCUS_MAX x FOCUS_W (id, x, y, w, h, kind)
+FOCUS_MAX  = 64;
+FOCUS_W    = 6;
+// Ask for full resolution on a Retina screen; REAPER then sets it to 2 and
+// every size in @gfx doubles through ui_s.
+gfx_ext_retina < 1 ? ( gfx_ext_retina = 1 );
+
 // ---------------------------------------------------------------- palette
 // Shared scheme. Every grey satisfies R < G < B - that is the load-bearing
 // property, because a neutral grey at the same lightness reads flat next to the
@@ -101,10 +109,14 @@ C_BEAT   = 0x1E2228;   // grid lines, the held band
 C_HOVER  = 0x22262D;   // frame hover
 C_GROUND = 0x23272E;   // window chrome
 C_ACTIVE = 0x2A2F37;   // frame active
-C_SEP    = 0x3A404A;   // separators, borders
-C_DIM    = 0x8A919C;   // disabled and secondary text
+C_SEP    = 0x3A404A;   // separators, panel borders - not for the edge of anything you use
+C_EDGE   = 0x6D7581;   // the edge of a field or setting, and the canvas's marks: 3:1 or more
+C_DIM    = 0x8A919C;   // disabled text only, and marks - 4.7:1, too faint for words
+C_LABEL2 = 0xB0B6C0;   // secondary text: 7.35:1 on the ground, 8.3:1 on panels
 C_TEXT   = 0xDDE1E7;   // body text
 C_PLAY   = 0xF2F4F7;   // playhead
+C_RING   = 0xF2F4F7;   // the keyboard focus ring - near-white, never the accent
+C_WARN_TEXT = 0xFF9E96; // a warning in words: 7.55:1 (the red itself is 3.4:1)
 
 // Raw-RGB helpers are deliberately absent: every colour goes through setx() so
 // nothing can slip past the scheme.
@@ -603,6 +615,13 @@ file_var(0, ser_ver);
 file_mem(0, 0, PARAM_LEN);
 file_mem(0, ca_base, NSLOTS * CN);
 file_mem(0, cr_base, NSLOTS * CN);
+// The interface size (Options), saved with the project. Older projects end
+// before it, so it is only read when there is something left to read, and a
+// preset or REAPER's undo never resizes a window that is already showing.
+(file_avail(0) < 0) ? ( file_var(0, ui_zoom); ) : file_avail(0) > 0 ? (
+  file_var(0, zoom_in);
+  ui_zoom < 1 ? ( ui_zoom = zoom_in );
+);
 (file_avail(0) < 0) ? (
   0;              // writing
 ) : (
@@ -611,8 +630,9 @@ file_mem(0, cr_base, NSLOTS * CN);
   last_preset = slider1;
 );
 
-@gfx 820 660
+@gfx 820 730
 
+// ================================================================ helpers
 function slot_name(s) (
   s == 0 ? "Dynamics" :
   s == 1 ? "Expression" :
@@ -630,57 +650,219 @@ function mark_custom() (
   );
 );
 
-// Buttons are light fills on a dark ground, so the ink is C_INK on every one of
-// them - chosen and unchosen alike. Body text on C_CTRL would be ~1.6:1.
-function btn(x, y, w, h, label, active) local(hot, held, hit) (
-  hot  = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+// The pointer is over a rectangle - and not over the message bar, which is
+// drawn last and covers anything scrolled underneath it.
+function inr(x, y, w, h) (
+  mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h && mouse_y >= hit_top;
+);
+
+// The system's own typeface where there is one: Segoe UI on Windows, San
+// Francisco on macOS, else Arial. gfx_getfont names the face actually given
+// back, so a missing font is caught rather than guessed (Transient Shuffler's).
+function pick_font() (
+  gfx_setfont(1, "Segoe UI", 14, 0); gfx_getfont(#got);
+  matchi("Segoe UI*", #got) ? strcpy(#ui_font, "Segoe UI") : (
+    gfx_setfont(1, ".AppleSystemUIFont", 14, 0); gfx_getfont(#got);
+    (matchi("*System*", #got) || matchi("*SF*", #got)) ?
+      strcpy(#ui_font, ".AppleSystemUIFont") : strcpy(#ui_font, "Arial");
+  );
+  font_ready = 1;
+);
+
+// Apple's macOS sizes: 13-point text, nothing smaller. Every size is
+// multiplied by ui_s, the interface size times the screen's Retina factor.
+function fonts() (
+  gfx_setfont(1, #ui_font, 14 * ui_s, 0);     // buttons, the message bar
+  gfx_setfont(2, #ui_font, 13 * ui_s, 0);     // labels, secondary text
+  gfx_setfont(3, #ui_font, 14 * ui_s, 'b');   // values
+);
+
+// Draws a string, cut short with an ellipsis if it is wider than w.
+function text_fit(str, x, y, w, h) local(tw, th, n, c) (
+  gfx_measurestr(str, tw, th);
+  tw <= w ? (
+    gfx_x = x; gfx_y = y; gfx_drawstr(str, 4, x + w, y + h);
+  ) : (
+    n = strlen(str);
+    while (n > 1 && tw > w) (
+      n -= 1;
+      // never cut a UTF-8 character in half
+      while (n > 1 && (c = str_getchar(str, n)) >= -128 && c < -64) ( n -= 1; );
+      strcpy_substr(#fit, str, 0, n); strcat(#fit, "…");
+      gfx_measurestr(#fit, tw, th);
+    );
+    gfx_x = x; gfx_y = y; gfx_drawstr(#fit, 4, x + w, y + h);
+  );
+);
+
+// Draws a string word-wrapped into lines of width w, lh apart, from (x, y),
+// and returns how many lines it took; with draw = 0 it only counts. A single
+// word wider than w is cut short as a last resort.
+function wrap_text(str, x, y, w, lh, draw) local(n, s, i, ok, tw, th, lines) (
+  n = strlen(str); s = 0; lines = 0;
+  while (s < n) (
+    while (s < n && str_getchar(str, s) == 32) ( s += 1; );
+    s < n ? (
+      ok = -1; i = s;
+      while (i <= n) (
+        (i == n || str_getchar(str, i) == 32) ? (
+          strcpy_substr(#wl, str, s, i - s);
+          gfx_measurestr(#wl, tw, th);
+          (tw <= w || ok < 0) ? ( ok = i; tw > w ? ( i = n ); ) : ( i = n );
+        );
+        i += 1;
+      );
+      draw ? ( strcpy_substr(#wl, str, s, ok - s); text_fit(#wl, x, y + lines * lh, w, lh); );
+      lines += 1;
+      s = ok;
+    );
+  );
+  max(1, lines);
+);
+
+// A word on a small plate of the canvas's own ground, so the curve's fill
+// can never sit under it and thin its contrast.
+function plate_text(str, x, y, c) local(tw, th) (
+  gfx_measurestr(str, tw, th);
+  setx(C_ROLL);
+  gfx_rect(x - 3 * ui_s, y - 1 * ui_s, tw + 6 * ui_s, th + 2 * ui_s, 1);
+  setx(c);
+  gfx_x = x; gfx_y = y;
+  gfx_drawstr(str);
+);
+
+// ---------------------------------------------------------------- keyboard
+// Every control registers itself as it is drawn, so Tab walks them in
+// reading order. The list lives in memory at focus_base: id, x, y, w, h, kind.
+function focus_add(id, x, y, w, h, kind) local(p) (
+  fl_n < FOCUS_MAX ? (
+    p = focus_base + fl_n * FOCUS_W;
+    p[0] = id; p[1] = x; p[2] = y; p[3] = w; p[4] = h; p[5] = kind;
+    fl_n += 1;
+  );
+);
+
+// Near-white, never the accent: yellow means "on", the ring means "here".
+function focus_ring(x, y, w, h) (
+  setx(C_RING);
+  gfx_rect(x - 3 * ui_s, y - 3 * ui_s, w + 6 * ui_s, h + 6 * ui_s, 0);
+  gfx_rect(x - 2 * ui_s, y - 2 * ui_s, w + 4 * ui_s, h + 4 * ui_s, 0);
+);
+
+function focus_mark(id, x, y, w, h, kind) (
+  reg_on ? focus_add(id, x, y, w, h, kind);
+  focus_id == id ? (
+    // a lane row's ring sits just inside it, clear of the rows either side
+    kind == 5 ? focus_ring(x + 3 * ui_s, y + 3 * ui_s, w - 6 * ui_s, h - 6 * ui_s)
+              : focus_ring(x, y, w, h);
+  );
+);
+
+// Return or Space presses the focused control.
+function key_press(id) (
+  (focus_id == id && (ui_key == 13 || ui_key == 32)) ? ( ui_key = 0; 1; ) : 0;
+);
+
+// The arrows nudge the focused control: up or right is +1, down or left -1.
+function key_step(id) local(d) (
+  d = 0;
+  focus_id == id ? (
+    (ui_key == 'up' || ui_key == 'rght') ? ( d = 1;  ui_key = 0; ) :
+    (ui_key == 'down' || ui_key == 'left') ? ( d = -1; ui_key = 0; );
+  );
+  d;
+);
+
+// What the control just drawn does, shown in the message bar while it is
+// pointed at or focused. Each hint starts with the control's own name.
+function hint(str) (
+  (w_hot || (w_id > 0 && focus_id == w_id)) ? ( hint_on = 1; ui_hint = str; );
+);
+
+// A message stays at the top until Dismiss is clicked or another replaces it.
+function set_status(str) ( strcpy(#status, str); );
+
+// A button is never narrower than its label.
+function bwid(label, minw) local(tw, th) (
+  gfx_setfont(1);
+  gfx_measurestr(label, tw, th);
+  max(minw * ui_s, ceil(tw + 24 * ui_s));
+);
+
+// Places the next item of a row that wraps at the window's edge.
+function flow(w) local(x) (
+  (flow_x > flow_x0 && flow_x + w > gfx_w - pad) ? ( flow_x = flow_x0; flow_y += ch + gap; );
+  x = flow_x;
+  flow_x += w + gap;
+  x;
+);
+
+// ---------------------------------------------------------------- controls
+// Buttons are light fills on a dark ground, so the ink is C_INK on every one
+// of them - chosen and unchosen alike. Body text on C_CTRL would be ~1.6:1.
+// A chosen button also carries an ink bar under its label, so "chosen" is
+// never told by colour alone.
+function btn(id, x, y, w, h, label, active) local(hot, held, c) (
+  hot  = inr(x, y, w, h);
+  w_hot = hot; w_id = id;
   held = hot && (mouse_cap & 1);
   active ? (
-    held ? setx(shade(C_ACCENT, HELD_F)) : hot ? setx(shade(C_ACCENT, HOVER_F)) : setx(C_ACCENT);
+    c = held ? shade(C_ACCENT, HELD_F) : (hot ? shade(C_ACCENT, HOVER_F) : C_ACCENT);
   ) : (
-    held ? setx(C_CTRL_D) : hot ? setx(C_CTRL_H) : setx(C_CTRL);
+    c = held ? C_CTRL_D : (hot ? C_CTRL_H : C_CTRL);
   );
+  setx(c);
   gfx_rect(x, y, w, h, 1);
   setx(C_INK);
   gfx_rect(x, y, w, h, 0);
+  gfx_setfont(1);
   gfx_x = x; gfx_y = y;
   gfx_drawstr(label, 1 | 4, x + w, y + h);
-  hit = hot && click;
-  hit;
+  active ? ( setx(C_INK); gfx_rect(x + 10 * ui_s, y + h - 5 * ui_s, w - 20 * ui_s, 2 * ui_s, 1); );
+  focus_mark(id, x, y, w, h, 1);
+  (hot && click) || key_press(id);
 );
 
-// Like btn() but greys out and stops responding when there is nothing to do.
-function ubtn(x, y, w, h, label, avail) local(hot, held, hit) (
-  hot = avail && mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+// Like btn() but greys out, leaves the Tab order and stops responding when
+// there is nothing to do. Its dimmed label is the one text exempt from 7:1.
+function ubtn(id, x, y, w, h, label, avail) local(hot, held) (
+  hot = avail && inr(x, y, w, h);
+  w_hot = inr(x, y, w, h); w_id = avail ? id : 0;
   held = hot && (mouse_cap & 1);
-  avail ? ( held ? setx(C_CTRL_D) : hot ? setx(C_CTRL_H) : setx(C_CTRL) ) : setx(C_ACTIVE);
+  avail ? setx(held ? C_CTRL_D : (hot ? C_CTRL_H : C_CTRL)) : setx(C_ACTIVE);
   gfx_rect(x, y, w, h, 1);
   avail ? setx(C_INK) : setx(C_SEP);
   gfx_rect(x, y, w, h, 0);
   avail ? setx(C_INK) : setx(C_DIM);
+  gfx_setfont(1);
   gfx_x = x; gfx_y = y;
   gfx_drawstr(label, 1 | 4, x + w, y + h);
-  hit = hot && click;
-  hit;
+  avail ? focus_mark(id, x, y, w, h, 1);
+  avail && ((hot && click) || key_press(id));
 );
 
-// Enum setting: left-click advances, right-click steps back, both wrapping.
-// Dragging would be hopeless on a 2-value control and coarse on a 17-value one.
-function optctl(id, x, y, w, h, label, val, vmx) local(hot, nv) (
-  hot = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
+// Enum setting: click or Return advances, right-click steps back, the arrows
+// go either way; all wrap. Dragging would be hopeless on a 2-value control
+// and coarse on a 17-value one.
+function optctl(id, x, y, w, h, label, val, vmx) local(hot, nv, d) (
+  hot = inr(x, y, w, h);
+  w_hot = hot; w_id = id;
   nv  = val;
-  (hot && click)  ? nv = val >= vmx ? 0 : val + 1;
-  (hot && rclick) ? nv = val <= 0 ? vmx : val - 1;
+  (hot && click)  ? ( nv = val >= vmx ? 0 : val + 1 );
+  (hot && rclick) ? ( nv = val <= 0 ? vmx : val - 1 );
+  key_press(id)   ? ( nv = val >= vmx ? 0 : val + 1 );
+  d = key_step(id);
+  d > 0 ? ( nv = val >= vmx ? 0 : val + 1 ) : d < 0 ? ( nv = val <= 0 ? vmx : val - 1 );
   setx(C_SUNK);
   gfx_rect(x, y, w, h, 1);
-  hot ? setx(C_ACCENT) : setx(C_SEP);
+  hot ? setx(C_CTRL) : setx(C_EDGE);
   gfx_rect(x, y, w, h, 0);
-  setx(C_DIM);
+  setx(C_LABEL2);
   gfx_setfont(2);
-  gfx_x = x; gfx_y = y + 5;
-  gfx_drawstr(label, 1, x + w, y + 18);
-  gfx_setfont(1);
-  ctl_x = x; ctl_y = y; ctl_w = w;
+  gfx_x = x; gfx_y = y + 6 * ui_s;
+  gfx_drawstr(label, 1, x + w, y + 24 * ui_s);
+  focus_mark(id, x, y, w, h, 3);
+  ctl_x = x; ctl_y = y; ctl_w = w; ctl_h = h;
   fld_val = nv;
   nv != val;
 );
@@ -689,9 +871,8 @@ function optctl(id, x, y, w, h, label, val, vmx) local(hot, nv) (
 function ctl_txt(str, c) (
   gfx_setfont(3);
   setx(c);
-  gfx_x = ctl_x; gfx_y = ctl_y + 20;
-  gfx_drawstr(str, 1, ctl_x + ctl_w, ctl_y + 38);
-  gfx_setfont(1);
+  gfx_x = ctl_x; gfx_y = ctl_y + 24 * ui_s;
+  gfx_drawstr(str, 1, ctl_x + ctl_w, ctl_y + ctl_h - 2 * ui_s);
 );
 
 function fmtval(kind, v) (
@@ -702,36 +883,54 @@ function fmtval(kind, v) (
               sprintf(#g, "%d", v);
 );
 
-// Drag-to-edit numeric field. Result lands in fld_val, fld_changed says if it moved.
-function field(id, x, y, w, h, label, val, vmn, vmx, kind, editable)
-              local(hot, nv, d) (
-  hot = mouse_x >= x && mouse_x < x + w && mouse_y >= y && mouse_y < y + h;
-  (editable && hot && click) ? ( drag_id = id; drag_y = mouse_y; drag_v = val; arm_undo(); );
+// Numeric field: drag up or down (Command for fine steps), or focus it and use
+// the arrows (Shift for fine steps). mode 1 = editable, 2 = read-only (shown,
+// still readable), 0 = disabled (dimmed). Result in fld_val.
+function field(id, x, y, w, h, label, val, vmn, vmx, kind, mode, stp, fine)
+              local(hot, nv, d, ed) (
+  ed  = mode == 1;
+  hot = inr(x, y, w, h);
+  w_hot = hot; w_id = ed ? id : 0;
+  (ed && hot && click) ? ( drag_id = id; drag_y = mouse_y; drag_v = val; arm_undo(); );
   nv = val;
-  (editable && drag_id == id && (mouse_cap & 1)) ? (
-    d = (drag_y - mouse_y) * (vmx - vmn) / 150;
-    (mouse_cap & 4) ? d *= 0.2;
+  (ed && drag_id == id && (mouse_cap & 1)) ? (
+    d = (drag_y - mouse_y) * (vmx - vmn) / (150 * ui_s);
+    (mouse_cap & 4) ? ( d *= 0.2 );
     nv = drag_v + d;
-    kind == 3 ? ( nv = floor(nv * 100 + 0.5) / 100; ) : ( nv = floor(nv + 0.5); );
+    nv = kind == 3 ? floor(nv * 100 + 0.5) / 100 : floor(nv + 0.5);
     nv = clampv(nv, vmn, vmx);
   );
-  editable ? setx(C_SUNK) : setx(C_ROLL);
+  d = ed ? key_step(id) : 0;
+  d != 0 ? (
+    arm_undo();
+    nv = val + d * ((mouse_cap & 8) ? fine : stp);
+    nv = kind == 3 ? floor(nv * 100 + 0.5) / 100 : floor(nv + 0.5);
+    nv = clampv(nv, vmn, vmx);
+  );
+  ed ? setx(C_SUNK) : setx(C_ROLL);
   gfx_rect(x, y, w, h, 1);
-  (editable && (hot || drag_id == id)) ? setx(C_ACCENT) : setx(C_SEP);
+  (ed && drag_id == id) ? setx(C_ACCENT) : (ed && hot) ? setx(C_CTRL) : ed ? setx(C_EDGE) : setx(C_SEP);
   gfx_rect(x, y, w, h, 0);
-  setx(C_DIM);
+  mode ? setx(C_LABEL2) : setx(C_DIM);
   gfx_setfont(2);
-  gfx_x = x; gfx_y = y + 5;
-  gfx_drawstr(label, 1, x + w, y + 18);
+  gfx_x = x; gfx_y = y + 6 * ui_s;
+  gfx_drawstr(label, 1, x + w, y + 24 * ui_s);
   gfx_setfont(3);
-  editable ? setx(C_TEXT) : setx(C_DIM);
+  ed ? setx(C_TEXT) : mode ? setx(C_LABEL2) : setx(C_DIM);
   fmtval(kind, nv);
-  gfx_x = x; gfx_y = y + 20;
-  gfx_drawstr(#g, 1, x + w, y + 38);
-  gfx_setfont(1);
+  gfx_x = x; gfx_y = y + 24 * ui_s;
+  gfx_drawstr(#g, 1, x + w, y + h - 2 * ui_s);
+  ed ? focus_mark(id, x, y, w, h, 2);
   fld_changed = nv != val;
   fld_val = nv;
   fld_changed;
+);
+
+// A line as thick as the interface is large, so curves and ticks keep their
+// weight at 200% and on a Retina screen.
+function tline(x1, y1, x2, y2) local(j) (
+  j = 0;
+  loop(max(1, floor(ui_s + 0.5)), gfx_line(x1, y1 + j, x2, y2 + j); j += 1; );
 );
 
 function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) (
@@ -746,165 +945,256 @@ function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) 
                    su + (fl - su) * curve_at(cr_base, s, (p - 0.70) / 0.30);
     px = x + p * w;
     py = y + h - (v / 127) * h;
-    i > 0 ? gfx_line(lx, ly, px, py);
+    i > 0 ? tline(lx, ly, px, py);
     lx = px; ly = py;
     i += 1;
   );
 );
 
-// ---------------------------------------------------------------- frame setup
+function choose_preset(p) (
+  push_undo(); slider1 = p; last_preset = p; load_preset(p); sliderchange(slider1);
+  sprintf(#status, "Loaded the %s preset into the four fixed lanes. Undo puts them back.",
+          p == 0 ? "Default" : p == 1 ? "Strings" : p == 2 ? "Brass" : "Woodwinds");
+);
+
+// Field cells laid out in a grid that keeps reading order and wraps to fewer
+// columns when the window is narrow or the interface is large.
+function cell(n, cols, cw, y0) (
+  cell_x = pad + (n % cols) * (cw + gap);
+  cell_y = y0 + floor(n / cols) * (fh + gap);
+);
+
+// ================================================================ frame setup
+!font_ready ? pick_font();
+(ui_zoom < 1 || ui_zoom > 2) ? ( ui_zoom = 1 );
+// As large as chosen, but no larger than the window's width allows: the
+// layout needs 340 points across, so a narrow window shrinks a large interface
+// (never below 100%) rather than drawing past its right edge.
+ui_s = max(1, gfx_ext_retina) * max(1, min(ui_zoom, gfx_w / (max(1, gfx_ext_retina) * 340)));
+fonts();
+
+// One key a frame. Calling gfx_getchar() every frame is also what keeps
+// mouse_cap's modifiers current when the mouse is not captured (Command for
+// fine drags, Shift for fine arrows and Shift+Tab). Ctrl+Z / Ctrl+Y only
+// arrive as 26 / 25 when "Send all keyboard input to plug-in" is on; the
+// buttons always work. Tab, Return and the arrows may likewise be taken by
+// REAPER first in some set-ups - unverified (see docs/apple-hig-review.md).
+ui_key = gfx_getchar();
 click  = (mouse_cap & 1) && !(last_cap & 1);
 rclick = (mouse_cap & 2) && !(last_cap & 2);
 !(mouse_cap & 1) ? ( drag_id = 0; draw_ci = -1; stage_armed = 0; );
+(click || rclick) ? ( focus_id = 0 );      // pointing takes over from the keyboard
+ui_key == 26 ? ( do_undo(); ui_key = 0; ) : ui_key == 25 ? ( do_redo(); ui_key = 0; );
 
-// gfx_getchar() must be called at least once per frame for mouse_cap to carry
-// keyboard modifiers when the mouse is not captured - the Ctrl fine-adjust in
-// field() depends on it. Ctrl+Z/Ctrl+Y only arrive as 26/25 when the user has
-// enabled "Send all keyboard input to plug-in"; the buttons always work.
-while ((kc = gfx_getchar()) > 0) (
-  kc == 26 ? do_undo() : kc == 25 ? do_redo();
-);
+pad = 12 * ui_s;
+gap = 12 * ui_s;              // between controls
+ch  = 28 * ui_s;              // a control's height
+fh  = 48 * ui_s;              // a field: its label above its value
 
-gfx_setfont(1, "Arial", 15);
-gfx_setfont(2, "Arial", 11);
-gfx_setfont(3, "Arial", 15, 'b');
-gfx_setfont(4, "Arial", 20, 'b');
-gfx_setfont(5, "Arial", 12);
+// Scrolling: the window may be smaller than what a large interface needs.
+mouse_wheel != 0 ? ( scroll -= mouse_wheel / 120 * 48 * ui_s; mouse_wheel = 0; );
+scroll = clampv(scroll, 0, max(0, content_h - gfx_h));
 
 setx(C_INK);
 gfx_rect(0, 0, gfx_w, gfx_h, 1);
 
-// header
-setx(C_GROUND);
-gfx_rect(0, 0, gfx_w, 46, 1);
-setx(C_SEP);
-gfx_line(0, 46, gfx_w, 46);
+fl_n = 0; reg_on = 1; hint_on = 0;
 
-gfx_setfont(4);
-setx(C_ACCENT);
-gfx_x = 14; gfx_y = 12;
-gfx_drawstr("AutoCC");
-
-// The preset group is right-aligned (the button strip plus the CUSTOM badge is
-// 450px), so the tagline only gets drawn when it would not run into it.
+// The bar is drawn last, over anything scrolled beneath it, but it comes
+// first in the Tab order, so its buttons are registered now.
+status_on = strlen(#status) > 0;
+opt_w = bwid("Options", 84);
+opt_x = gfx_w - pad - opt_w;
+dis_w = bwid("Dismiss", 84);
+dis_x = opt_x - gap - dis_w;
+msg_r = (status_on ? dis_x : opt_x) - gap;
+// The message bar wraps rather than cutting a message short. Its words sit
+// beside Dismiss and Options, or under them when that leaves too little room,
+// and it is as tall as the longest message needs at this width and size (and
+// as Dismiss would leave), so it does not jump as the pointer moves.
 gfx_setfont(1);
-bw = 88; bh = 26; by = 10;
-bx = max(300, gfx_w - 464);
+bar_lh = gfx_texth + 2 * ui_s;
+bar_under = dis_x - gap - pad < 240 * ui_s;
+bar_x = pad;
+bar_w = bar_under ? gfx_w - 2 * pad : msg_r - pad;
+bar_y = bar_under ? pad + ch + 6 * ui_s : pad;
+nw = bar_under ? bar_w : dis_x - gap - pad;
+bar_n = max(wrap_text("Copied Aux / Vibrato’s timing and curves to every other lane. Undo puts them back.", 0, 0, nw, bar_lh, 0),
+            max(wrap_text(#status, 0, 0, nw, bar_lh, 0), wrap_text(#bar_last, 0, 0, nw, bar_lh, 0)));
+bar_h = bar_under ? bar_n * bar_lh : max(ch, bar_n * bar_lh);
+top_h = bar_y + bar_h + 8 * ui_s;  // the message bar, fixed at the top
+status_on ? focus_add(113, dis_x, pad, dis_w, ch, 1);
+focus_add(110, opt_x, pad, opt_w, ch, 1);
 
-bx > 360 ? (
-  gfx_setfont(2);
-  setx(C_DIM);
-  gfx_x = 100; gfx_y = 19;
-  gfx_drawstr("Play with both hands — the CCs write themselves");
-  gfx_setfont(1);
-);
-btn(bx,            by, bw, bh, "Default",   slider1 == 0) ? ( push_undo(); slider1 = 0; last_preset = 0; load_preset(0); sliderchange(slider1); );
-btn(bx + 94,       by, bw, bh, "Strings",   slider1 == 1) ? ( push_undo(); slider1 = 1; last_preset = 1; load_preset(1); sliderchange(slider1); );
-btn(bx + 188,      by, bw, bh, "Brass",     slider1 == 2) ? ( push_undo(); slider1 = 2; last_preset = 2; load_preset(2); sliderchange(slider1); );
-btn(bx + 282,      by, bw, bh, "Woodwinds", slider1 == 3) ? ( push_undo(); slider1 = 3; last_preset = 3; load_preset(3); sliderchange(slider1); );
+hit_top = top_h;
+y = top_h + 4 * ui_s - scroll;
+
+// ---------------------------------------------------------------- presets
+gfx_setfont(2);
+gfx_measurestr("Preset", tw, th);
+setx(C_LABEL2);
+gfx_x = pad; gfx_y = y + (ch - th) / 2;
+gfx_drawstr("Preset");
+
+flow_x0 = pad; flow_x = pad + tw + gap; flow_y = y;
+bw = max(max(bwid("Default", 88), bwid("Strings", 88)), max(bwid("Brass", 88), bwid("Woodwinds", 88)));
+bx = flow(bw); btn(101, bx, flow_y, bw, ch, "Default", slider1 == 0) ? choose_preset(0);
+hint("Default: a neutral arc that suits anything. Presets change the four fixed lanes.");
+bx = flow(bw); btn(102, bx, flow_y, bw, ch, "Strings", slider1 == 1) ? choose_preset(1);
+hint("Strings: a slow swell, a settled sustain and a long, gentle fall.");
+bx = flow(bw); btn(103, bx, flow_y, bw, ch, "Brass", slider1 == 2) ? choose_preset(2);
+hint("Brass: a fast attack with a bloom, a firm sustain and a moderate fall.");
+bx = flow(bw); btn(104, bx, flow_y, bw, ch, "Woodwinds", slider1 == 3) ? choose_preset(3);
+hint("Woodwinds: a quick, speech-like attack, a steady sustain and a quick fall.");
 
 slider1 == 4 ? (
+  cw4 = bwid("Custom", 72);
+  bx = flow(cw4);
   setx(C_ACCENT);
-  gfx_rect(bx + 378, by, 72, bh, 0);
-  gfx_x = bx + 378; gfx_y = by;
-  gfx_drawstr("Custom", 1 | 4, bx + 450, by + bh);
+  gfx_rect(bx, flow_y, cw4, ch, 0);
+  gfx_setfont(1);
+  gfx_x = bx; gfx_y = flow_y;
+  gfx_drawstr("Custom", 1 | 4, bx + cw4, flow_y + ch);
 );
 
+pw = bwid("Panic / Reset", 120);
+flow_x <= gfx_w - pad - pw ? ( bx = gfx_w - pad - pw; ) : ( bx = flow(pw); );
+btn(105, bx, flow_y, pw, ch, "Panic / Reset", 0) ? (
+  all_notes_off(); reset_runtime();
+  set_status("Panic — every held note is released and every lane is back at its floor.");
+);
+hint("Panic / Reset: release every held note and send each lane back to its floor.");
+y = flow_y + ch + gap;
+
 // ---------------------------------------------------------------- lane list
-lx0 = 12; ly0 = 56; lw = 300;
+// Side by side when there is room, the editor under the lanes when not.
+lw  = 316 * ui_s;
+ph  = 34 * ui_s + 7 * 40 * ui_s;
+lx0 = pad; ly0 = y;
+(gfx_w - 2 * pad - lw - gap >= 340 * ui_s) ? (
+  ex0 = pad + lw + gap; ey0 = y; ew = gfx_w - pad - ex0;
+  y += ph + gap;
+) : (
+  lw = gfx_w - 2 * pad; ex0 = pad; ey0 = y + ph + gap; ew = lw;
+  y = ey0 + ph + gap;
+);
+
 setx(C_SUNK);
-gfx_rect(lx0, ly0, lw, 302, 1);
+gfx_rect(lx0, ly0, lw, ph, 1);
 setx(C_SEP);
-gfx_rect(lx0, ly0, lw, 302, 0);
+gfx_rect(lx0, ly0, lw, ph, 0);
 
 gfx_setfont(2);
-setx(C_DIM);
-gfx_x = lx0 + 10; gfx_y = ly0 + 8;
+setx(C_LABEL2);
+gfx_x = lx0 + 10 * ui_s; gfx_y = ly0 + 9 * ui_s;
 gfx_drawstr("CC Lanes");
-gfx_x = lx0 + 210; gfx_y = ly0 + 8;
+gfx_x = lx0 + 256 * ui_s;
 gfx_drawstr("Live");
 
 i = 0;
 while (i < NSLOTS) (
-  ry = ly0 + 28 + i * 38;
-  rh = 34;
-  hot = mouse_x >= lx0 + 4 && mouse_x < lx0 + lw - 4 && mouse_y >= ry && mouse_y < ry + rh;
-  (hot && click && drag_id == 0) ? sel_slot = i;
+  ry = ly0 + 34 * ui_s + i * 40 * ui_s;
+  rh = 38 * ui_s;
+  rx = lx0 + 4 * ui_s; rw = lw - 8 * ui_s;
+  hot = inr(rx, ry, rw, rh);
+  bxh = lx0 + 6 * ui_s; byh = ry + (rh - ch) / 2;     // the box's 28-point target
+  ehot = inr(bxh, byh, ch, ch);
+  rfx = bxh + ch + 4 * ui_s; rfw = rx + rw - rfx;     // the row's own part
 
+  ((ehot && click) || key_press(200 + i)) ? ( push_undo(); set_en(i, !s_en[i]); sel_slot = i; );
+  ((hot && click && drag_id == 0) || key_press(210 + i)) ? ( sel_slot = i; );
+
+  // The selected row is lighter, so its secondary words step up to body text
+  // to stay above 7:1.
   sel_slot == i ? setx(C_ACTIVE) : hot ? setx(C_HOVER) : setx(C_POPUP);
-  gfx_rect(lx0 + 4, ry, lw - 8, rh, 1);
-  sel_slot == i ? ( setx(C_ACCENT); gfx_rect(lx0 + 4, ry, 3, rh, 1); );
+  gfx_rect(rx, ry, rw, rh, 1);
+  sel_slot == i ? ( setx(C_ACCENT); gfx_rect(rx, ry, 3 * ui_s, rh, 1); );
+  tc2 = sel_slot == i ? C_TEXT : C_LABEL2;
 
-  // enable toggle
-  ex = lx0 + 12; ey = ry + 9;
-  ehot = mouse_x >= ex && mouse_x < ex + 16 && mouse_y >= ey && mouse_y < ey + 16;
-  (ehot && click) ? ( push_undo(); set_en(i, !s_en[i]); sel_slot = i; );
-  s_en[i] ? setx(C_ACCENT) : setx(C_SUNK);
-  gfx_rect(ex, ey, 16, 16, 1);
-  s_en[i] ? setx(C_INK) : setx(C_SEP);
-  gfx_rect(ex, ey, 16, 16, 0);
-  s_en[i] ? ( setx(C_INK); gfx_line(ex + 4, ey + 8, ex + 7, ey + 11); gfx_line(ex + 7, ey + 11, ex + 12, ey + 5); );
+  // on/off box: a tick as well as the yellow
+  eb = 16 * ui_s;
+  ex = bxh + (ch - eb) / 2; ey = byh + (ch - eb) / 2;
+  s_en[i] ? setx(C_ACCENT) : ehot ? setx(C_CTRL_H) : setx(C_CTRL);
+  gfx_rect(ex, ey, eb, eb, 1);
+  setx(C_INK);
+  gfx_rect(ex, ey, eb, eb, 0);
+  s_en[i] ? (
+    tline(ex + 4 * ui_s, ey + 8 * ui_s, ex + 7 * ui_s, ey + 11 * ui_s);
+    tline(ex + 7 * ui_s, ey + 11 * ui_s, ex + 12 * ui_s, ey + 5 * ui_s);
+    tline(ex + 4 * ui_s, ey + 9 * ui_s, ex + 7 * ui_s, ey + 12 * ui_s);
+    tline(ex + 7 * ui_s, ey + 12 * ui_s, ex + 12 * ui_s, ey + 6 * ui_s);
+  );
 
   // cc number + name
   gfx_setfont(3);
-  s_cc[i] >= 0 ? ( s_en[i] ? setx(C_TEXT) : setx(C_DIM) ) : setx(C_SEP);
+  (s_cc[i] >= 0 && s_en[i]) ? setx(C_TEXT) : setx(tc2);
   fmtval(4, s_cc[i]);
-  gfx_x = lx0 + 38; gfx_y = ry + 8;
+  gfx_x = lx0 + 44 * ui_s; gfx_y = ry + (rh - gfx_texth) / 2;
   gfx_drawstr(#g);
   gfx_setfont(2);
-  setx(C_DIM);
-  gfx_x = lx0 + 96; gfx_y = ry + 11;
-  gfx_drawstr(slot_name(i));
-  i < 4 ? ( setx(C_SEP); gfx_x = lx0 + 96; gfx_y = ry + 22; gfx_drawstr("Fixed") );
+  setx(tc2);
+  i < 4 ? (
+    gfx_x = lx0 + 96 * ui_s; gfx_y = ry + 3 * ui_s;  gfx_drawstr(slot_name(i));
+    gfx_x = lx0 + 96 * ui_s; gfx_y = ry + 20 * ui_s; gfx_drawstr("Fixed");
+  ) : (
+    gfx_x = lx0 + 96 * ui_s; gfx_y = ry + (rh - gfx_texth) / 2; gfx_drawstr(slot_name(i));
+  );
 
   // mini curve
-  s_en[i] ? setxa(C_ACCENT, 0.85) : setxa(C_SEP, 0.9);
-  draw_mini(lx0 + 176, ry + 6, 52, 22, i);
+  s_en[i] ? setxa(C_ACCENT, 0.85) : setx(C_DIM);
+  draw_mini(lx0 + 190 * ui_s, ry + 8 * ui_s, 52 * ui_s, 22 * ui_s, i);
 
   // live value
   lvl = slot_live(i) ? r_val[i] : 0;
   setx(C_ROLL);
-  gfx_rect(lx0 + 238, ry + 14, 42, 7, 1);
+  gfx_rect(lx0 + 256 * ui_s, ry + 24 * ui_s, 46 * ui_s, 7 * ui_s, 1);
   slot_live(i) ? (
-    r_stage[i] ? setx(C_ACCENT) : setx(C_SEP);
-    gfx_rect(lx0 + 238, ry + 14, max(1, 42 * lvl / 127), 7, 1);
+    r_stage[i] ? setx(C_ACCENT) : setx(C_DIM);
+    gfx_rect(lx0 + 256 * ui_s, ry + 24 * ui_s, max(1, 46 * ui_s * lvl / 127), 7 * ui_s, 1);
   );
   gfx_setfont(2);
-  setx(C_DIM);
+  setx(tc2);
   fmtval(0, floor(lvl + 0.5));
-  gfx_x = lx0 + 238; gfx_y = ry + 1;
-  gfx_drawstr(#g, 1, lx0 + 280, ry + 13);
+  gfx_x = lx0 + 256 * ui_s; gfx_y = ry + 3 * ui_s;
+  gfx_drawstr(#g, 1, lx0 + 302 * ui_s, ry + 22 * ui_s);
 
+  w_hot = ehot; w_id = 200 + i;
+  focus_mark(200 + i, bxh, byh, ch, ch, 4);
+  hint("Lane on or off: a lane that’s off sends its floor once, then stays quiet.");
+  w_hot = hot && !ehot; w_id = 210 + i;
+  focus_mark(210 + i, rfx, ry, rfw, rh, 5);
+  i < 4 ? hint("Fixed lane: choose it to edit its envelope. Its CC number can’t change.")
+        : hint("Your own lane: choose it, set a CC number, then draw its curve.");
   i += 1;
 );
 
-gfx_setfont(1);
-
 // ---------------------------------------------------------------- editor
 sel = sel_slot;
-ex0 = 324; ew = gfx_w - ex0 - 12;
 setx(C_SUNK);
-gfx_rect(ex0, ly0, ew, 302, 1);
+gfx_rect(ex0, ey0, ew, ph, 1);
 setx(C_SEP);
-gfx_rect(ex0, ly0, ew, 302, 0);
+gfx_rect(ex0, ey0, ew, ph, 0);
 
 gfx_setfont(2);
-setx(C_DIM);
-gfx_x = ex0 + 10; gfx_y = ly0 + 8;
+setx(C_LABEL2);
+gfx_x = ex0 + 10 * ui_s; gfx_y = ey0 + 9 * ui_s;
 gfx_drawstr("Envelope");
+gfx_x += 8 * ui_s;
 setx(C_TEXT);
 fmtval(4, s_cc[sel]);
-gfx_x = ex0 + 76; gfx_y = ly0 + 8;
 gfx_drawstr(#g);
-setx(C_DIM);
-gfx_x = ex0 + 128; gfx_y = ly0 + 8;
+gfx_x += 8 * ui_s;
+setx(C_LABEL2);
 gfx_drawstr(slot_name(sel));
-setx(C_SEP);
-gfx_x = ex0 + ew - 250; gfx_y = ly0 + 8;
-gfx_drawstr("Drag in Rise or Fall to draw the curve");
+name_end = gfx_x;
+gfx_measurestr("Drag in Rise or Fall to draw the curve", tw, th);
+(ex0 + ew - 10 * ui_s - tw > name_end + 16 * ui_s) ? (
+  gfx_x = ex0 + ew - 10 * ui_s - tw; gfx_y = ey0 + 9 * ui_s;
+  gfx_drawstr("Drag in Rise or Fall to draw the curve");
+);
 
 // canvas
-cx = ex0 + 10; cy = ly0 + 28; cw = ew - 20; chh = 258;
+cx = ex0 + 10 * ui_s; cy = ey0 + 32 * ui_s; cw = ew - 20 * ui_s; chh = ph - 42 * ui_s;
 setx(C_ROLL);
 gfx_rect(cx, cy, cw, chh, 1);
 
@@ -932,18 +1222,21 @@ xs1 = cx + cw * (ta + td + th) / tot;
 setx(C_SUNK); gfx_rect(cx,  cy, xa1 - cx,        chh, 1);
 setx(C_BEAT); gfx_rect(xa1, cy, xs1 - xa1,       chh, 1);
 setx(C_SUNK); gfx_rect(xs1, cy, cx + cw - xs1,   chh, 1);
-setx(C_SEP);
+// The stage boundaries and the floor are 3:1 or more on the canvas.
+setx(C_EDGE);
 gfx_line(xa1, cy, xa1, cy + chh);
 gfx_line(xd1, cy, xd1, cy + chh);
 gfx_line(xs1, cy, xs1, cy + chh);
 
 // floor line
-setxa(C_SEP, 0.8);
+setx(C_EDGE);
 fy = cy + chh - (fl / 127) * chh;
 gfx_line(cx, fy, cx + cw, fy);
 
 // ---- drawing interaction
-inside = mouse_x >= cx && mouse_x < cx + cw && mouse_y >= cy - 6 && mouse_y < cy + chh + 6;
+inside = inr(cx, cy - 6 * ui_s, cw, chh + 12 * ui_s);
+w_hot = inside; w_id = 0;
+hint("Envelope: drag in Rise or Fall to draw the curve. Rise Shape and Fall Shape set it from the keyboard.");
 (inside && click && drag_id == 0) ? ( drag_id = 20; draw_ci = -1; arm_undo(); );
 
 (drag_id == 20 && (mouse_cap & 1)) ? (
@@ -992,7 +1285,7 @@ while (px <= cw) (
       su + (fl - su) * curve_at(cr_base, sel, tr > 0 ? (tt - ta - td - th) / tr : 1);
   vy = cy + chh - clampv(v, 0, 127) / 127 * chh;
   px > 0 ? (
-    gfx_line(lastpx, lastpy, cx + px, vy);
+    tline(lastpx, lastpy, cx + px, vy);
     setxa(C_ACCENT, 0.10);
     gfx_line(cx + px, vy, cx + px, cy + chh);
     setx(C_ACCENT);
@@ -1001,12 +1294,20 @@ while (px <= cw) (
   px += 1;
 );
 
+// The band names sit on plates so the curve's fill never thins them.
+gfx_setfont(2);
+plate_text("Rise", cx + 6 * ui_s, cy + chh - 20 * ui_s, C_LABEL2);
+gfx_measurestr(env_mode == 1 ? "Hold" : "Sustain", tw, th);
+(xs1 - xa1) > tw + 12 * ui_s ? plate_text(env_mode == 1 ? "Hold" : "Sustain", xa1 + 6 * ui_s, cy + chh - 20 * ui_s, C_LABEL2);
+plate_text("Fall", xs1 + 6 * ui_s, cy + chh - 20 * ui_s, C_LABEL2);
+
 // ---- live playhead
 // Vertical line at where the envelope currently is along its own timeline, with
 // a dot at the value being sent. Runtime stage times are already multiplied by
 // tscale, so divide it back out to land on the unscaled ms the canvas is drawn
 // in. During sustain the playhead parks at the right edge of the (display-only)
 // hold band rather than running off, since a held note has no fixed length.
+// It shows real playback, not decoration, so Reduce Motion has nothing to stop.
 (slot_live(sel) && r_stage[sel]) ? (
   pst = r_stage[sel];
   pms = r_t[sel] * 1000 / max(0.0001, tscale);
@@ -1017,60 +1318,86 @@ while (px <= cw) (
   phx = cx + cw * clampv(pt, 0, tot) / tot;
   phy = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
 
-  setxa(C_PLAY, 0.35);
+  setxa(C_PLAY, 0.5);
   gfx_line(phx, cy, phx, cy + chh);
   setxa(C_ACCENT, 0.22);
-  gfx_circle(phx, phy, 8, 0, 1);
+  gfx_circle(phx, phy, 8 * ui_s, 0, 1);
   setx(C_ACCENT);
-  gfx_circle(phx, phy, 4, 1, 1);
+  gfx_circle(phx, phy, 4 * ui_s, 1, 1);
 
   // Value rides beside the dot, flipping left near the right edge.
   gfx_setfont(3);
   fmtval(0, floor(r_val[sel] + 0.5));
   gfx_measurestr(#g, mw, mh);
-  setx(C_ACCENT);
-  gfx_x = (phx + 10 + mw) > (cx + cw) ? phx - 10 - mw : phx + 10;
-  gfx_y = clampv(phy - mh * 0.5, cy + 2, cy + chh - mh - 2);
-  gfx_drawstr(#g);
-  gfx_setfont(1);
+  plate_text(#g, (phx + 12 * ui_s + mw) > (cx + cw) ? phx - 12 * ui_s - mw : phx + 12 * ui_s,
+             clampv(phy - mh * 0.5, cy + 2 * ui_s, cy + chh - mh - 2 * ui_s), C_ACCENT);
 );
-
-gfx_setfont(2);
-setx(C_DIM); gfx_x = cx + 4;  gfx_y = cy + chh - 16; gfx_drawstr("Rise");
-(xs1 - xa1) > 34 ? (
-  setx(C_DIM); gfx_x = xa1 + 4; gfx_y = cy + chh - 16;
-  gfx_drawstr(env_mode == 1 ? "Hold" : "Sustain");
-);
-setx(C_DIM); gfx_x = xs1 + 4; gfx_y = cy + chh - 16; gfx_drawstr("Fall");
-gfx_setfont(1);
 
 // ---------------------------------------------------------------- fields
-fgap = 6; fw = floor((gfx_w - 24 - fgap * 4) / 5); fh = 46;
-fy1 = ly0 + 308; fy2 = fy1 + fh + 6;
+fcols = clampv(floor((gfx_w - 2 * pad + gap) / (130 * ui_s + gap)), 2, 5);
+fw = floor((gfx_w - 2 * pad - (fcols - 1) * gap) / fcols);
+fy0 = y;
 
-fx = lx0;
-field(10, fx, fy1, fw, fh, "CC Number", s_cc[sel], -1, 127, 4, sel >= 4) ? ( commit_undo(); s_cc[sel] = fld_val; r_last[sel] = -1; mark_custom(); );
-field(1, fx + (fw + fgap),     fy1, fw, fh, "Floor",   s_floor[sel], 0, 127, 0, 1) ? ( commit_undo(); s_floor[sel] = fld_val; mark_custom(); );
-field(2, fx + (fw + fgap) * 2, fy1, fw, fh, "Peak",    s_peak[sel],  0, 127, 0, 1) ? ( commit_undo(); s_peak[sel]  = fld_val; mark_custom(); );
-field(3, fx + (fw + fgap) * 3, fy1, fw, fh, "Sustain", s_sus[sel],   0, 127, 0, 1) ? ( commit_undo(); s_sus[sel]   = fld_val; mark_custom(); );
-field(4, fx + (fw + fgap) * 4, fy1, fw, fh, "Velocity",s_vel[sel],   0, 100, 2, 1) ? ( commit_undo(); s_vel[sel]   = fld_val; mark_custom(); );
-
-field(5, fx,                   fy2, fw, fh, "Rise",    s_atk[sel], 0, 8000, 1, 1) ? ( commit_undo(); s_atk[sel] = fld_val; mark_custom(); );
-field(6, fx + (fw + fgap),     fy2, fw, fh, "Settle",  s_dcy[sel], 0, 8000, 1, 1) ? ( commit_undo(); s_dcy[sel] = fld_val; mark_custom(); );
-field(7, fx + (fw + fgap) * 2, fy2, fw, fh, "Fall",    s_rel[sel], 0, 8000, 1, 1) ? ( commit_undo(); s_rel[sel] = fld_val; mark_custom(); );
-field(8, fx + (fw + fgap) * 3, fy2, fw, fh, "Rise Shape", s_aexp[sel], 0.10, 6, 3, 1) ? ( commit_undo(); s_aexp[sel] = fld_val; mkcurve(ca_base, sel, fld_val); mark_custom(); );
-field(9, fx + (fw + fgap) * 4, fy2, fw, fh, "Fall Shape", s_rexp[sel], 0.10, 6, 3, 1) ? ( commit_undo(); s_rexp[sel] = fld_val; mkcurve(cr_base, sel, fld_val); mark_custom(); );
+cell(0, fcols, fw, fy0);
+field(10, cell_x, cell_y, fw, fh, "CC Number", s_cc[sel], -1, 127, 4, sel >= 4 ? 1 : 2, 1, 1) ?
+  ( commit_undo(); s_cc[sel] = fld_val; r_last[sel] = -1; mark_custom(); );
+hint("CC Number: the controller this lane sends. Fixed lanes keep theirs.");
+cell(1, fcols, fw, fy0);
+field(1, cell_x, cell_y, fw, fh, "Floor", s_floor[sel], 0, 127, 0, 1, 5, 1) ?
+  ( commit_undo(); s_floor[sel] = fld_val; mark_custom(); );
+hint("Floor: where the lane rests between notes.");
+cell(2, fcols, fw, fy0);
+field(2, cell_x, cell_y, fw, fh, "Peak", s_peak[sel], 0, 127, 0, 1, 5, 1) ?
+  ( commit_undo(); s_peak[sel] = fld_val; mark_custom(); );
+hint("Peak: the top of the rise.");
+cell(3, fcols, fw, fy0);
+field(3, cell_x, cell_y, fw, fh, "Sustain", s_sus[sel], 0, 127, 0, 1, 5, 1) ?
+  ( commit_undo(); s_sus[sel] = fld_val; mark_custom(); );
+hint("Sustain: the level held while the key is down.");
+cell(4, fcols, fw, fy0);
+field(4, cell_x, cell_y, fw, fh, "Velocity", s_vel[sel], 0, 100, 2, 1, 5, 1) ?
+  ( commit_undo(); s_vel[sel] = fld_val; mark_custom(); );
+hint("Velocity: how much a note’s velocity scales the arc. 0% ignores it.");
+cell(5, fcols, fw, fy0);
+field(5, cell_x, cell_y, fw, fh, "Rise", s_atk[sel], 0, 8000, 1, 1, 50, 5) ?
+  ( commit_undo(); s_atk[sel] = fld_val; mark_custom(); );
+hint("Rise: how long the arc takes to reach its peak.");
+cell(6, fcols, fw, fy0);
+field(6, cell_x, cell_y, fw, fh, "Settle", s_dcy[sel], 0, 8000, 1, 1, 50, 5) ?
+  ( commit_undo(); s_dcy[sel] = fld_val; mark_custom(); );
+hint("Settle: how long the peak takes to ease down to the sustain level.");
+cell(7, fcols, fw, fy0);
+field(7, cell_x, cell_y, fw, fh, "Fall", s_rel[sel], 0, 8000, 1, 1, 50, 5) ?
+  ( commit_undo(); s_rel[sel] = fld_val; mark_custom(); );
+hint("Fall: how long the lane takes to return to its floor.");
+cell(8, fcols, fw, fy0);
+field(8, cell_x, cell_y, fw, fh, "Rise Shape", s_aexp[sel], 0.10, 6, 3, 1, 0.1, 0.01) ?
+  ( commit_undo(); s_aexp[sel] = fld_val; mkcurve(ca_base, sel, fld_val); mark_custom(); );
+hint("Rise Shape: below 1 leaps off the mark, above 1 swells slowly.");
+cell(9, fcols, fw, fy0);
+field(9, cell_x, cell_y, fw, fh, "Fall Shape", s_rexp[sel], 0.10, 6, 3, 1, 0.1, 0.01) ?
+  ( commit_undo(); s_rexp[sel] = fld_val; mkcurve(cr_base, sel, fld_val); mark_custom(); );
+hint("Fall Shape: below 1 drops away quickly, above 1 lingers.");
+y = fy0 + ceil(10 / fcols) * (fh + gap);
 
 // ---------------------------------------------------------------- buttons
-uy = fy2 + fh + 10;
-ubtn(lx0, uy, 64, 26, "Undo", u_n > 0) ? do_undo();
-ubtn(lx0 + 70, uy, 64, 26, "Redo", rd_n > 0) ? do_redo();
+flow_x0 = pad; flow_x = pad; flow_y = y;
+bw = bwid("Undo", 64); bx = flow(bw);
+ubtn(111, bx, flow_y, bw, ch, "Undo", u_n > 0) ? do_undo();
+hint("Undo: take back the last change to the lanes. Command-Z works too.");
+bw = bwid("Redo", 64); bx = flow(bw);
+ubtn(112, bx, flow_y, bw, ch, "Redo", rd_n > 0) ? do_redo();
+hint("Redo: put back what you undid.");
 
-btn(lx0 + 146, uy, 118, 26, "Reset Curves", 0) ? (
+bw = bwid("Reset Curves", 118); bx = flow(bw);
+btn(120, bx, flow_y, bw, ch, "Reset Curves", 0) ? (
   push_undo();
   mkcurve(ca_base, sel, s_aexp[sel]); mkcurve(cr_base, sel, s_rexp[sel]); mark_custom();
+  sprintf(#status, "Reset %s’s curves from its Rise Shape and Fall Shape. Undo puts them back.", slot_name(sel));
 );
-btn(lx0 + 270, uy, 136, 26, "Copy Shape to All", 0) ? (
+hint("Reset Curves: redraw this lane’s curves from Rise Shape and Fall Shape.");
+bw = bwid("Copy Shape to All", 136); bx = flow(bw);
+btn(121, bx, flow_y, bw, ch, "Copy Shape to All", 0) ? (
   push_undo();
   i = 0;
   while (i < NSLOTS) (
@@ -1087,92 +1414,158 @@ btn(lx0 + 270, uy, 136, 26, "Copy Shape to All", 0) ? (
     i += 1;
   );
   mark_custom();
+  sprintf(#status, "Copied %s’s timing and curves to every other lane. Undo puts them back.", slot_name(sel));
 );
+hint("Copy Shape to All: give every other lane this lane’s timing and curves.");
 sel >= 4 ? (
-  btn(lx0 + 412, uy, 100, 26, "Clear Lane", 0) ? ( push_undo(); clear_slot(sel); set_en(sel, 0); mark_custom(); );
+  bw = bwid("Clear Lane", 100); bx = flow(bw);
+  btn(122, bx, flow_y, bw, ch, "Clear Lane", 0) ? (
+    push_undo(); clear_slot(sel); set_en(sel, 0); mark_custom();
+    sprintf(#status, "Cleared %s and turned it off. Undo brings it back.", slot_name(sel));
+  );
+  hint("Clear Lane: empty this lane and turn it off.");
 );
-btn(gfx_w - 132, uy, 120, 26, "Panic / Reset", 0) ? ( all_notes_off(); reset_runtime(); );
+y = flow_y + ch + gap;
 
-// ------------------------------------------------- global settings strip
-// Two rows: envelope behaviour on top, MIDI routing and output below. At the
-// 820px minimum this keeps every label readable, which one row of eleven would
-// not.
-gy  = uy + 42;
-gh  = 42;
-gw1 = floor((gfx_w - 24 - 6 * 4) / 5);
-gw2 = floor((gfx_w - 24 - 6 * 5) / 6);
-gy2 = gy + gh + 4;
-
+// ------------------------------------------------- global settings
+// Envelope behaviour first, then MIDI routing and output, each group starting
+// a new row; the columns narrow or wrap with the window and interface size.
 gfx_setfont(2);
-setx(C_DIM);
-gfx_x = lx0; gfx_y = gy - 14;
+setx(C_LABEL2);
+gfx_x = pad; gfx_y = y;
 gfx_drawstr("Global");
-gfx_setfont(1);
+y += gfx_texth + 6 * ui_s;
+gcols = clampv(floor((gfx_w - 2 * pad + gap) / (110 * ui_s + gap)), 2, 6);
+gw = floor((gfx_w - 2 * pad - (gcols - 1) * gap) / gcols);
 
-// ---- row 1: envelope
-gxp = lx0;
-optctl(33, gxp, gy, gw1, gh, "Mode", slider18, 2) ?
+gy0 = y;
+cell(0, gcols, gw, gy0);
+optctl(33, cell_x, cell_y, gw, fh, "Mode", slider18, 2) ?
   ( slider18 = fld_val; sliderchange(slider18); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider18 == 0 ? "Gated" : slider18 == 1 ? "One-Shot" : "ADR", C_TEXT);
-
-gxp = lx0 + (gw1 + 6);
-field(39, gxp, gy, gw1, gh, "Hold", slider19, 0, 10000, 1, slider18 == 1) ?
+hint("Mode: Gated follows the key, One-Shot plays through, ADR has no sustain.");
+cell(1, gcols, gw, gy0);
+field(39, cell_x, cell_y, gw, fh, "Hold", slider19, 0, 10000, 1, slider18 == 1, 100, 10) ?
   ( slider19 = fld_val; sliderchange(slider19); apply_sliders(); undo_pt = 1; );
-
-gxp = lx0 + (gw1 + 6) * 2;
-optctl(34, gxp, gy, gw1, gh, "Trigger", slider4, 1) ?
+hint("Hold: how long One-Shot holds its sustain before it falls.");
+cell(2, gcols, gw, gy0);
+optctl(34, cell_x, cell_y, gw, fh, "Trigger", slider4, 1) ?
   ( slider4 = fld_val; sliderchange(slider4); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider4 ? "Retrigger" : "Legato", C_TEXT);
-
-gxp = lx0 + (gw1 + 6) * 3;
-field(30, gxp, gy, gw1, gh, "Depth", slider2, 0, 200, 2, 1) ?
+hint("Trigger: Legato starts an arc on a phrase’s first note, Retrigger on every note.");
+cell(3, gcols, gw, gy0);
+field(30, cell_x, cell_y, gw, fh, "Depth", slider2, 0, 200, 2, 1, 5, 1) ?
   ( slider2 = fld_val; sliderchange(slider2); apply_sliders(); undo_pt = 1; );
-
-gxp = lx0 + (gw1 + 6) * 4;
-field(31, gxp, gy, gw1, gh, "Time", slider3, 10, 400, 2, 1) ?
+hint("Depth: scales every lane’s movement around its floor.");
+cell(4, gcols, gw, gy0);
+field(31, cell_x, cell_y, gw, fh, "Time", slider3, 10, 400, 2, 1, 5, 1) ?
   ( slider3 = fld_val; sliderchange(slider3); apply_sliders(); undo_pt = 1; );
+hint("Time: stretches or squeezes every stage, hold included.");
+y = gy0 + ceil(5 / gcols) * (fh + gap);
 
-// ---- row 2: MIDI routing and output
-gxp = lx0;
-optctl(35, gxp, gy2, gw2, gh, "MIDI In", slider5, 16) ?
+gy0 = y;
+cell(0, gcols, gw, gy0);
+optctl(35, cell_x, cell_y, gw, fh, "MIDI In", slider5, 16) ?
   ( slider5 = fld_val; sliderchange(slider5); apply_sliders(); undo_pt = 1; );
-slider5 > 0 ? ( fmtval(0, slider5); ctl_txt(#g, C_TEXT); )
-            : ctl_txt("Omni", C_TEXT);
-
-gxp = lx0 + (gw2 + 6);
-optctl(36, gxp, gy2, gw2, gh, "CC Out", slider6, 16) ?
+slider5 > 0 ? ( fmtval(0, slider5); ctl_txt(#g, C_TEXT); ) : ctl_txt("Omni", C_TEXT);
+hint("MIDI In: listen to every channel (Omni) or to one. Right-click steps back.");
+cell(1, gcols, gw, gy0);
+optctl(36, cell_x, cell_y, gw, fh, "CC Out", slider6, 16) ?
   ( slider6 = fld_val; sliderchange(slider6); apply_sliders(); undo_pt = 1; );
-slider6 > 0 ? ( fmtval(0, slider6); ctl_txt(#g, C_TEXT); )
-            : ctl_txt("Follow", C_TEXT);
-
-gxp = lx0 + (gw2 + 6) * 2;
-optctl(37, gxp, gy2, gw2, gh, "Pedal", slider7, 1) ?
+slider6 > 0 ? ( fmtval(0, slider6); ctl_txt(#g, C_TEXT); ) : ctl_txt("Follow", C_TEXT);
+hint("CC Out: send on the note’s own channel (Follow) or on a fixed one.");
+cell(2, gcols, gw, gy0);
+optctl(37, cell_x, cell_y, gw, fh, "Pedal", slider7, 1) ?
   ( slider7 = fld_val; sliderchange(slider7); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider7 ? "Holds" : "Ignored", C_TEXT);
-
-gxp = lx0 + (gw2 + 6) * 3;
-optctl(38, gxp, gy2, gw2, gh, "MIDI Thru", slider9, 1) ?
+hint("Pedal: whether the sustain pedal keeps a Gated arc going after you let go.");
+cell(3, gcols, gw, gy0);
+optctl(38, cell_x, cell_y, gw, fh, "MIDI Thru", slider9, 1) ?
   ( slider9 = fld_val; sliderchange(slider9); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider9 ? "On" : "Off", C_TEXT);
-
-gxp = lx0 + (gw2 + 6) * 4;
-field(32, gxp, gy2, gw2, gh, "Rate", slider8, 1, 30, 1, 1) ?
+hint("MIDI Thru: pass your notes on to the instrument after AutoCC.");
+cell(4, gcols, gw, gy0);
+field(32, cell_x, cell_y, gw, fh, "Rate", slider8, 1, 30, 1, 1, 1, 1) ?
   ( slider8 = fld_val; sliderchange(slider8); apply_sliders(); undo_pt = 1; );
-
-gxp = lx0 + (gw2 + 6) * 5;
-optctl(40, gxp, gy2, gw2, gh, "Engine", slider10, 1) ?
+hint("Rate: how often a moving lane sends a new value.");
+cell(5, gcols, gw, gy0);
+optctl(40, cell_x, cell_y, gw, fh, "Engine", slider10, 1) ?
   ( slider10 = fld_val; sliderchange(slider10); apply_sliders(); undo_pt = 1; );
-slider10 ? ctl_txt("Bypassed", C_WARN)
-         : ctl_txt("Active", C_TEXT);
+// The warning is in words, in the warning text colour; the house red only
+// marks the box.
+slider10 ? (
+  setx(C_WARN); gfx_rect(ctl_x, ctl_y, ctl_w, ctl_h, 0);
+  ctl_txt("Bypassed", C_WARN_TEXT);
+) : ctl_txt("Active", C_TEXT);
+hint("Engine: Bypassed stops every CC; Active sends them.");
+y = gy0 + ceil(6 / gcols) * (fh + gap);
 
-// ---------------------------------------------------------------- footer
-gfx_setfont(5);
+content_h = y - gap + pad + scroll;
+
+// A thin indicator on the right edge when there is more than fits.
+content_h > gfx_h ? (
+  setx(C_SEP);
+  gfx_rect(gfx_w - 5 * ui_s, top_h, 3 * ui_s, gfx_h - top_h, 1);
+  setx(C_DIM);
+  gfx_rect(gfx_w - 5 * ui_s, top_h + (gfx_h - top_h) * scroll / content_h,
+           3 * ui_s, max(12 * ui_s, (gfx_h - top_h) * gfx_h / content_h), 1);
+);
+
+// ---------------------------------------------------------------- message bar
+// At the top, never the bottom: a message, else what the control under the
+// pointer or the focus does, else a warning that the engine is off, else what
+// to do. A message stays until Dismiss, or until another replaces it.
+hit_top = 0; reg_on = 0;
+setx(C_GROUND);
+gfx_rect(0, 0, gfx_w, top_h, 1);
 setx(C_SEP);
-gfx_x = lx0; gfx_y = gy2 + gh + 10;
-gfx_drawstr("CC1, CC11, CC7 and CC21 are fixed lanes. Lanes 5–7 are yours: set a CC number, then draw its curve.");
-gfx_x = lx0; gfx_y = gy2 + gh + 26;
-gfx_drawstr("Click a lane’s box to mute it. Drag a field to edit it; hold Command for fine steps. Click a Global setting to change it, right-click to go back.");
+gfx_line(0, top_h - 1, gfx_w, top_h - 1);
+
+status_on ? (
+  btn(113, dis_x, pad, dis_w, ch, "Dismiss", 0) ? strcpy(#status, "");
+  hint("Dismiss: clear this message.");
+);
+btn(110, opt_x, pad, opt_w, ch, "Options", 0) ? (
+  gfx_x = opt_x; gfx_y = pad + ch;
+  sprintf(#menu, "%sInterface Size 100%%|%sInterface Size 125%%|%sInterface Size 150%%|%sInterface Size 200%%",
+          ui_zoom == 1 ? "!" : "", ui_zoom == 1.25 ? "!" : "", ui_zoom == 1.5 ? "!" : "", ui_zoom == 2 ? "!" : "");
+  menu_sel = gfx_showmenu(#menu);
+  menu_sel == 1 ? ( ui_zoom = 1 ) : menu_sel == 2 ? ( ui_zoom = 1.25 ) :
+  menu_sel == 3 ? ( ui_zoom = 1.5 ) : menu_sel == 4 ? ( ui_zoom = 2 );
+);
+hint("Options: choose the interface size, from 100% to 200% (smaller when the window is too narrow).");
+
 gfx_setfont(1);
+strlen(#status) > 0 ? (
+  setx(C_TEXT); strcpy(#bar_last, #status);
+) : hint_on ? (
+  setx(C_LABEL2); strcpy(#bar_last, ui_hint);
+) : slider10 ? (
+  setx(C_WARN_TEXT); strcpy(#bar_last, "The engine is bypassed — no CCs are being sent. Set Engine to Active.");
+) : (
+  setx(C_LABEL2); strcpy(#bar_last, "Play with both hands — the CCs write themselves. Press Tab to move by keyboard.");
+);
+// one line sits in the middle of the bar beside the buttons; more start at its top
+bar_n = wrap_text(#bar_last, 0, 0, bar_w, bar_lh, 0);
+wrap_text(#bar_last, bar_x, bar_y + max(0, bar_h - bar_n * bar_lh) / 2, bar_w, bar_lh, 1);
+
+// ---------------------------------------------------------------- keys
+// Tab and Shift+Tab move the focus through every control in reading order,
+// scrolling it into view; Esc lets go of it.
+ui_key == 9 ? (
+  fl_n > 0 ? (
+    cur = -1; i = 0;
+    loop(fl_n, focus_base[i * FOCUS_W] == focus_id ? ( cur = i ); i += 1; );
+    (mouse_cap & 8) ? ( cur = cur <= 0 ? fl_n - 1 : cur - 1 )
+                    : ( cur = cur < 0 ? 0 : (cur + 1) % fl_n );
+    focus_id = focus_base[cur * FOCUS_W];
+    (focus_id != 110 && focus_id != 113) ? (
+      fy_ = focus_base[cur * FOCUS_W + 2]; fh_ = focus_base[cur * FOCUS_W + 4];
+      fy_ < top_h + 6 * ui_s ? ( scroll -= top_h + 6 * ui_s - fy_ ) :
+      fy_ + fh_ > gfx_h - 6 * ui_s ? ( scroll += fy_ + fh_ - gfx_h + 6 * ui_s );
+    );
+  );
+) : ui_key == 27 ? ( focus_id = 0 );
 
 // sliderchange(-1) from @gfx asks REAPER to add a project undo point, which
 // snapshots the serialized curve data too. Deferring to mouse-up means one
