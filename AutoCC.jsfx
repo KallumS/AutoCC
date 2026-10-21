@@ -1,6 +1,6 @@
 desc:AutoCC - automatic MIDI CC curves for orchestral libraries
 author:AutoCC
-version:1.1
+version:1.2
 tags:MIDI processing controller orchestral expression
 about:
   AutoCC generates orchestral CC curves automatically from incoming MIDI notes.
@@ -109,7 +109,8 @@ C_BEAT   = 0x1E2228;   // grid lines, the held band
 C_HOVER  = 0x22262D;   // frame hover
 C_GROUND = 0x23272E;   // window chrome
 C_ACTIVE = 0x2A2F37;   // frame active
-C_SEP    = 0x3A404A;   // separators, borders
+C_SEP    = 0x3A404A;   // separators, panel borders - not for the edge of anything you use
+C_EDGE   = 0x6D7581;   // the edge of a field or setting, and the canvas's marks: 3:1 or more
 C_DIM    = 0x8A919C;   // disabled text only, and marks - 4.7:1, too faint for words
 C_LABEL2 = 0xB0B6C0;   // secondary text: 7.35:1 on the ground, 8.3:1 on panels
 C_TEXT   = 0xDDE1E7;   // body text
@@ -694,6 +695,31 @@ function text_fit(str, x, y, w, h) local(tw, th, n, c) (
   );
 );
 
+// Draws a string word-wrapped into lines of width w, lh apart, from (x, y),
+// and returns how many lines it took; with draw = 0 it only counts. A single
+// word wider than w is cut short as a last resort.
+function wrap_text(str, x, y, w, lh, draw) local(n, s, i, ok, tw, th, lines) (
+  n = strlen(str); s = 0; lines = 0;
+  while (s < n) (
+    while (s < n && str_getchar(str, s) == 32) ( s += 1; );
+    s < n ? (
+      ok = -1; i = s;
+      while (i <= n) (
+        (i == n || str_getchar(str, i) == 32) ? (
+          strcpy_substr(#wl, str, s, i - s);
+          gfx_measurestr(#wl, tw, th);
+          (tw <= w || ok < 0) ? ( ok = i; tw > w ? ( i = n ); ) : ( i = n );
+        );
+        i += 1;
+      );
+      draw ? ( strcpy_substr(#wl, str, s, ok - s); text_fit(#wl, x, y + lines * lh, w, lh); );
+      lines += 1;
+      s = ok;
+    );
+  );
+  max(1, lines);
+);
+
 // A word on a small plate of the canvas's own ground, so the curve's fill
 // can never sit under it and thin its contrast.
 function plate_text(str, x, y, c) local(tw, th) (
@@ -829,7 +855,7 @@ function optctl(id, x, y, w, h, label, val, vmx) local(hot, nv, d) (
   d > 0 ? ( nv = val >= vmx ? 0 : val + 1 ) : d < 0 ? ( nv = val <= 0 ? vmx : val - 1 );
   setx(C_SUNK);
   gfx_rect(x, y, w, h, 1);
-  hot ? setx(C_CTRL) : setx(C_SEP);
+  hot ? setx(C_CTRL) : setx(C_EDGE);
   gfx_rect(x, y, w, h, 0);
   setx(C_LABEL2);
   gfx_setfont(2);
@@ -883,7 +909,7 @@ function field(id, x, y, w, h, label, val, vmn, vmx, kind, mode, stp, fine)
   );
   ed ? setx(C_SUNK) : setx(C_ROLL);
   gfx_rect(x, y, w, h, 1);
-  (ed && drag_id == id) ? setx(C_ACCENT) : (ed && hot) ? setx(C_CTRL) : setx(C_SEP);
+  (ed && drag_id == id) ? setx(C_ACCENT) : (ed && hot) ? setx(C_CTRL) : ed ? setx(C_EDGE) : setx(C_SEP);
   gfx_rect(x, y, w, h, 0);
   mode ? setx(C_LABEL2) : setx(C_DIM);
   gfx_setfont(2);
@@ -927,6 +953,8 @@ function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) 
 
 function choose_preset(p) (
   push_undo(); slider1 = p; last_preset = p; load_preset(p); sliderchange(slider1);
+  sprintf(#status, "Loaded the %s preset into the four fixed lanes. Undo puts them back.",
+          p == 0 ? "Default" : p == 1 ? "Strings" : p == 2 ? "Brass" : "Woodwinds");
 );
 
 // Field cells laid out in a grid that keeps reading order and wraps to fewer
@@ -939,7 +967,10 @@ function cell(n, cols, cw, y0) (
 // ================================================================ frame setup
 !font_ready ? pick_font();
 (ui_zoom < 1 || ui_zoom > 2) ? ( ui_zoom = 1 );
-ui_s = max(1, gfx_ext_retina) * ui_zoom;
+// As large as chosen, but no larger than the window's width allows: the
+// layout needs 340 points across, so a narrow window shrinks a large interface
+// (never below 100%) rather than drawing past its right edge.
+ui_s = max(1, gfx_ext_retina) * max(1, min(ui_zoom, gfx_w / (max(1, gfx_ext_retina) * 340)));
 fonts();
 
 // One key a frame. Calling gfx_getchar() every frame is also what keeps
@@ -959,7 +990,6 @@ pad = 12 * ui_s;
 gap = 12 * ui_s;              // between controls
 ch  = 28 * ui_s;              // a control's height
 fh  = 48 * ui_s;              // a field: its label above its value
-top_h = pad + ch + 8 * ui_s;  // the message bar, fixed at the top
 
 // Scrolling: the window may be smaller than what a large interface needs.
 mouse_wheel != 0 ? ( scroll -= mouse_wheel / 120 * 48 * ui_s; mouse_wheel = 0; );
@@ -978,6 +1008,21 @@ opt_x = gfx_w - pad - opt_w;
 dis_w = bwid("Dismiss", 84);
 dis_x = opt_x - gap - dis_w;
 msg_r = (status_on ? dis_x : opt_x) - gap;
+// The message bar wraps rather than cutting a message short. Its words sit
+// beside Dismiss and Options, or under them when that leaves too little room,
+// and it is as tall as the longest message needs at this width and size (and
+// as Dismiss would leave), so it does not jump as the pointer moves.
+gfx_setfont(1);
+bar_lh = gfx_texth + 2 * ui_s;
+bar_under = dis_x - gap - pad < 240 * ui_s;
+bar_x = pad;
+bar_w = bar_under ? gfx_w - 2 * pad : msg_r - pad;
+bar_y = bar_under ? pad + ch + 6 * ui_s : pad;
+nw = bar_under ? bar_w : dis_x - gap - pad;
+bar_n = max(wrap_text("Copied Aux / Vibrato’s timing and curves to every other lane. Undo puts them back.", 0, 0, nw, bar_lh, 0),
+            max(wrap_text(#status, 0, 0, nw, bar_lh, 0), wrap_text(#bar_last, 0, 0, nw, bar_lh, 0)));
+bar_h = bar_under ? bar_n * bar_lh : max(ch, bar_n * bar_lh);
+top_h = bar_y + bar_h + 8 * ui_s;  // the message bar, fixed at the top
 status_on ? focus_add(113, dis_x, pad, dis_w, ch, 1);
 focus_add(110, opt_x, pad, opt_w, ch, 1);
 
@@ -1177,18 +1222,21 @@ xs1 = cx + cw * (ta + td + th) / tot;
 setx(C_SUNK); gfx_rect(cx,  cy, xa1 - cx,        chh, 1);
 setx(C_BEAT); gfx_rect(xa1, cy, xs1 - xa1,       chh, 1);
 setx(C_SUNK); gfx_rect(xs1, cy, cx + cw - xs1,   chh, 1);
-setx(C_SEP);
+// The stage boundaries and the floor are 3:1 or more on the canvas.
+setx(C_EDGE);
 gfx_line(xa1, cy, xa1, cy + chh);
 gfx_line(xd1, cy, xd1, cy + chh);
 gfx_line(xs1, cy, xs1, cy + chh);
 
 // floor line
-setxa(C_SEP, 0.8);
+setx(C_EDGE);
 fy = cy + chh - (fl / 127) * chh;
 gfx_line(cx, fy, cx + cw, fy);
 
 // ---- drawing interaction
 inside = inr(cx, cy - 6 * ui_s, cw, chh + 12 * ui_s);
+w_hot = inside; w_id = 0;
+hint("Envelope: drag in Rise or Fall to draw the curve. Rise Shape and Fall Shape set it from the keyboard.");
 (inside && click && drag_id == 0) ? ( drag_id = 20; draw_ci = -1; arm_undo(); );
 
 (drag_id == 20 && (mouse_cap & 1)) ? (
@@ -1270,7 +1318,7 @@ plate_text("Fall", xs1 + 6 * ui_s, cy + chh - 20 * ui_s, C_LABEL2);
   phx = cx + cw * clampv(pt, 0, tot) / tot;
   phy = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
 
-  setxa(C_PLAY, 0.35);
+  setxa(C_PLAY, 0.5);
   gfx_line(phx, cy, phx, cy + chh);
   setxa(C_ACCENT, 0.22);
   gfx_circle(phx, phy, 8 * ui_s, 0, 1);
@@ -1345,7 +1393,7 @@ bw = bwid("Reset Curves", 118); bx = flow(bw);
 btn(120, bx, flow_y, bw, ch, "Reset Curves", 0) ? (
   push_undo();
   mkcurve(ca_base, sel, s_aexp[sel]); mkcurve(cr_base, sel, s_rexp[sel]); mark_custom();
-  sprintf(#status, "Reset %s’s curves from its Rise Shape and Fall Shape.", slot_name(sel));
+  sprintf(#status, "Reset %s’s curves from its Rise Shape and Fall Shape. Undo puts them back.", slot_name(sel));
 );
 hint("Reset Curves: redraw this lane’s curves from Rise Shape and Fall Shape.");
 bw = bwid("Copy Shape to All", 136); bx = flow(bw);
@@ -1485,20 +1533,21 @@ btn(110, opt_x, pad, opt_w, ch, "Options", 0) ? (
   menu_sel == 1 ? ( ui_zoom = 1 ) : menu_sel == 2 ? ( ui_zoom = 1.25 ) :
   menu_sel == 3 ? ( ui_zoom = 1.5 ) : menu_sel == 4 ? ( ui_zoom = 2 );
 );
-hint("Options: choose the interface size, from 100% to 200%.");
+hint("Options: choose the interface size, from 100% to 200% (smaller when the window is too narrow).");
 
 gfx_setfont(1);
 strlen(#status) > 0 ? (
-  setx(C_TEXT); text_fit(#status, pad, pad, msg_r - pad, ch);
+  setx(C_TEXT); strcpy(#bar_last, #status);
 ) : hint_on ? (
-  setx(C_LABEL2); text_fit(ui_hint, pad, pad, msg_r - pad, ch);
+  setx(C_LABEL2); strcpy(#bar_last, ui_hint);
 ) : slider10 ? (
-  setx(C_WARN_TEXT);
-  text_fit("The engine is bypassed — no CCs are being sent. Set Engine to Active.", pad, pad, msg_r - pad, ch);
+  setx(C_WARN_TEXT); strcpy(#bar_last, "The engine is bypassed — no CCs are being sent. Set Engine to Active.");
 ) : (
-  setx(C_LABEL2);
-  text_fit("Play with both hands — the CCs write themselves. Press Tab to move by keyboard.", pad, pad, msg_r - pad, ch);
+  setx(C_LABEL2); strcpy(#bar_last, "Play with both hands — the CCs write themselves. Press Tab to move by keyboard.");
 );
+// one line sits in the middle of the bar beside the buttons; more start at its top
+bar_n = wrap_text(#bar_last, 0, 0, bar_w, bar_lh, 0);
+wrap_text(#bar_last, bar_x, bar_y + max(0, bar_h - bar_n * bar_lh) / 2, bar_w, bar_lh, 1);
 
 // ---------------------------------------------------------------- keys
 // Tab and Shift+Tab move the focus through every control in reading order,

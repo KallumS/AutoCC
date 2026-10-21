@@ -100,3 +100,71 @@ exactly doubling at 200%, scrolling the focus into view, and the source rules
 slider reachable, no `want_all_kb`). Each was broken on purpose in a copy
 (`tools/bite.py`) and the checker failed; see
 `docs/sessions/2026-10-15-apple-hig.md`.
+
+## Final sweep (16 October 2026)
+
+AutoCC 1.2. Every guideline the shared checklist marks as doable in a
+custom-drawn window was taken back to its Foundations page and decided for this
+window; the measurements are WCAG contrast ratios at 100%.
+
+### Fixed now
+
+| Guideline (page) | Before | Now |
+| --- | --- | --- |
+| Non-text contrast of controls (Accessibility; Color; Dark Mode) | Every field and Global setting was a dark box with a `#3A404A` edge: 1.6:1 on its fill, 1.7:1 on the ground, so the box itself barely showed. | A new ramp entry, `C_EDGE` `#6D7581`: 3.6:1 on the fill, 3.9:1 on the ground. A field that is off keeps the faint edge, so on and off differ by more than the label's colour. |
+| Non-text contrast of the canvas (Accessibility; Color) | The lines marking where Rise, Settle, Hold and Fall start were `#3A404A` (1.5–1.8:1 on the bands), the floor line 1.4:1; the playhead line 3.0:1. | Stage lines and floor in `C_EDGE` (3.4–4.0:1 on every band); the playhead line at half strength, 4.7–4.9:1. The grid and the wash under the curve stay faint on purpose — they are texture, not information. |
+| Truncation at large sizes (Typography; Layout) | At 150–200% the message bar cut hints and messages short with "…" (the 1.1 decision recorded it as a cost). | The bar wraps. Its words sit beside Dismiss and Options, or under them when that leaves too little room, and it is as tall as the longest built-in message needs at that width and size — so it keeps one height as the pointer moves and when a message comes and goes. "…" survives only for a single word wider than the window. |
+| Adapt to the window; nothing past the edge (Layout) | The lane list is 316 points wide, so a window narrower than the chosen size needed drew the lanes past its right edge. | A large interface shrinks just enough to fit the width (never below 100%); the Options menu still ticks the size chosen, which comes back when the window is wide again. Down to 340 points wide at 100%, nothing is drawn past the edge. |
+| Make mistakes cheap to recover from; feedback (Design principles; Writing) | Choosing a preset replaced the four fixed lanes' settings and curves without a word; Reset Curves did not say Undo puts them back. | Both say what they replaced and that Undo puts it back, in the bar, until dismissed. Every action that discards curve edits (preset, Reset Curves, Copy Shape to All, Clear Lane, a lane's box) was already one step of AutoCC's 32-step Undo — so nothing asks first; it can all be taken back. |
+| Say how to do the unfamiliar (Design principles; Writing) | "Drag in Rise or Fall to draw the curve" was hidden when the editor was narrow, and the canvas had no hint. | Pointing at the canvas says how to draw on it, and that Rise Shape and Fall Shape do it from the keyboard. |
+
+### Already met
+
+| Guideline | Why |
+| --- | --- |
+| Colour never alone (ACC-02, COL-08, ACC-16, COL-09) | Chosen preset: ink bar; lane on: tick; bypassed: words; selected lane: stripe and the editor's heading; meters: their number. Yellow, grey and the red edge are told apart by lightness as well as hue. |
+| One colour, one meaning (COL-01, COL-14) | Yellow is "on" or "live" only; the focus ring is near-white; one chosen preset at a time. |
+| Esc (house rule) | Esc lets go of the keyboard focus; AutoCC never closes its own window. |
+| Menus (Dark Mode: elevated surfaces) | The only menu is REAPER's own (`gfx_showmenu`), drawn by the system. AutoCC draws no popup, tooltip or modal. |
+| System font (Typography TYP-05/08, Branding BRA-04) | `pick_font` asks for Segoe UI, then `.AppleSystemUIFont`, and keeps only what `gfx_getfont` says it got; Arial otherwise. One family; bold only for values. |
+| Motion (ACC-38–42, MOT-01–06, MOT-13, MOT-15, COL-26) | Nothing animates for decoration. The playhead and the live meters follow playback: information, not ornament, and they never flash. |
+| Every gesture has another way (ACC-26), many inputs (DP-14) | Drag a field: the arrows (Shift for fine); right-click a setting: Left arrow; draw a curve: Rise Shape, Fall Shape, Reset Curves. |
+| Shortcuts (ACC-31) | Only Tab, Return, Space, the arrows and Esc, inside the window; Command-Z / -Y only when REAPER hands them over. |
+| Hit targets and spacing (ACC-24, SPA-07) | Every control is a framed box 28 points tall and 12 apart; the lane box answers a 28-point target; the canvas is the whole editor. |
+| Text floor and weights (ACC-08/09, TYP-03/13) | 13 points or more, Regular and Bold only. |
+| Marks grow with the text (ACC-07, TYP-17, SFS-09) | The tick, the curves and the canvas lines thicken with the interface size (`tline`). |
+| Layout (LAY-02/03/05/07/09/12/13/14, TYP-19/20) | Rows wrap, grids lose columns, the lane list and editor stack; the message bar and Options stay at the top at every size; the checker tests 100–200%, a narrow window and Retina. |
+| Dark only (DRK-04) | The house scheme; a media tool, which the Dark Mode page allows; a JSFX can't read the system's appearance. |
+| Writing (WRI-02–25, INC-04–10, INC-19) | No "we", "Oops", "Click here", idioms or gendered words; every hint starts with its control's name; messages say what happened and how to take it back. |
+| Branding (BRA-03/05–09) | No logo or splash; REAPER's title bar names the plug-in. |
+| Privacy (PRV-01–03, 06, 13, 16) | Nothing is collected; everything is saved in the project. |
+| Sound (ACC-21, ACC-35) | AutoCC makes no sound of its own; the meters and playhead show every CC it sends. |
+
+### Not done, and why
+
+| Guideline | Why |
+| --- | --- |
+| Show selection more softly when the window isn't key (COL-22) | A JSFX can ask `gfx_getchar(65536)` whether its window has focus, but ysfx does not answer it, so it could not be checked; the selected lane's stripe and the chosen preset are the only selections and they stay true. |
+| Send people to a setting with a button (WRI-23) | "Set Engine to Active" names a control that is on screen, outlined in red, one Tab away. A second Engine control in the bar would be a duplicate. |
+| Let people recolour (ACC-17, COL-07) | The house scheme is the user's decision; the colours are fixed across the family. |
+| Zebra rows (COL-21) | Seven lanes, each a separate filled row with a gap between. |
+| A minimum window size (LAY-20) | A JSFX can't set one. Below 340 points wide at 100% the lane list runs past the edge. |
+| VoiceOver, Dynamic Type, Increase Contrast, Reduce Motion, appearance (ACC-03, COL-02, DP-12) | Unchanged from 1.1: out of a JSFX's reach (see above). |
+
+### Not relevant
+
+Icons, SF Symbols, Images, App icons, Materials, Spatial layout, Immersive
+experiences, games (ACC-34, MOT-08/09), right-to-left (RTL-04/10),
+localisation (INC-22/24, COL-10): AutoCC has none of these.
+
+### Checked by
+
+`tools/uicheck.py` gained six rules (145 checks in all), each broken on purpose
+in a copy with `tools/bite.py` and seen to fail: field and setting edges 3:1 on
+their fill and the ground; every mark on the canvas 3:1 on each band; no text
+cut short with "…"; at 200% a long message wraps whole inside the bar, and the
+bar keeps one height as the focus moves and the message goes; 200% in a
+560-point window and 100% in a 340-point window pass every window rule; choosing
+a preset says Undo puts it back; pointing at the canvas says how to draw. The
+playhead line is measured, not run: the checker's busy state has no note on
+the selected lane.

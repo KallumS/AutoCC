@@ -254,6 +254,13 @@ its secondary words step up to `C_TEXT`. Words drawn on the canvas sit on a
 small `C_ROLL` plate (`plate_text`) so the curve's fill cannot thin them. The
 focus ring is `C_RING` (#F2F4F7) — never the accent, which means "on".
 
+**Edges and marks (1.2, decision 0001's final sweep):** anything you use or
+read as a shape is at least **3:1** on what it sits on. The edge of a field or
+Global setting and the canvas's stage and floor lines are `C_EDGE` (#6D7581,
+3.4–4.0:1); `C_SEP` is only for panel borders and separators, which group
+rather than act, and for the edge of a field that is off. The canvas grid
+(`C_BEAT`) and the wash under the curve are texture and stay faint.
+
 `docs/palette-preview.svg` is a component mock whose colours are parsed out of
 `AutoCC.jsfx`, so regenerate it rather than hand-editing if the scheme changes.
 
@@ -342,13 +349,24 @@ own project undo also captures the edit.
   - **every line of text 7:1** (see *Palette*); a chosen control carries a
     second cue besides the yellow (the ink bar in `btn`, the tick in a box);
   - **messages go in the bar at the top** with `set_status()`/`sprintf(#status,
-    …)` and stay until Dismiss or the next message — never on a timer.
+    …)` and stay until Dismiss or the next message — never on a timer. The bar
+    **wraps** (`wrap_text`) and is sized for the longest built-in message, the
+    one passed to `wrap_text` at the frame's start; a new message longer than
+    that one replaces it there, or the bar grows the frame after it appears;
+  - an action that throws away curve edits calls `push_undo()` first and says
+    in the bar that Undo puts it back (1.2) — Undo, not a question;
+  - **an edge or a mark that carries meaning is 3:1** (`C_EDGE`), and a
+    meaningful hover target that is not a control still gets a `hint()`
+    (the canvas does, with `w_id = 0`);
+  - the layout needs **340 points across**; `ui_s` shrinks a large interface
+    to fit a narrower window, never below 100%. A new row wider than that
+    must wrap (`flow`, `cell`) or the 340 must change with it.
 - **Check the window after any change to it** (needs cmake, g++, freetype,
   fontconfig; the build is about two minutes the first time):
 
   ```sh
   tools/build_host.sh                        # once: tools/build/uihost (git-ignored)
-  python3 tools/uicheck.py                   # ~100 checks; --shots DIR writes PNGs
+  python3 tools/uicheck.py                   # ~145 checks; --shots DIR writes PNGs
   python3 tools/uicheck.py --static          # source checks only, no build
   python3 tools/bite.py "what" "old" "new"   # break it in a copy; must say BIT
   ```

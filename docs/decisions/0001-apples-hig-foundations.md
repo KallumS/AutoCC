@@ -95,3 +95,27 @@ refers to them by page and rule).
   `gfx_ext_retina` to 2; how the window looks at each size on a real screen;
   and whether changing the interface size alone marks the project as changed
   (if not, the new size is saved with the next change that does).
+
+## Final sweep, 16 October 2026 (1.2)
+
+The rest of the Foundations checklist, decided item by item in
+[`docs/apple-hig-review.md`](../apple-hig-review.md) under *Final sweep*.
+What changed, and what it costs:
+
+- **Edges 3:1.** Fields, Global settings and the canvas's stage and floor
+  lines use a new ramp entry, `C_EDGE` `#6D7581` (R < G < B), 3.4–4.0:1 where
+  `#3A404A` was 1.4–1.8:1. Panel borders stay `#3A404A`: they group, they are
+  not something you use. A disabled field keeps the faint edge.
+- **The message bar wraps.** It is as tall as the longest built-in message
+  needs at the current width and size, so it does not jump as the pointer
+  moves; at 200% in an 820-point window that is two lines under the buttons.
+  This replaces the 1.1 consequence that long hints were cut short.
+- **A narrow window shrinks a large interface** to fit across (never below
+  100%) instead of drawing past its edge. The chosen size is kept and comes
+  back when the window widens. A JSFX can't set a minimum size, so below 340
+  points wide at 100% the lane list still runs off.
+- **Undo, not a question.** Everything that throws away curve edits is one step
+  of AutoCC's Undo, and now says so in the bar (preset and Reset Curves were
+  silent). Asking first would interrupt a common action that is already free
+  to take back.
+- Pointing at the canvas says how to draw on it.

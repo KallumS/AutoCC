@@ -143,6 +143,19 @@ function t_rect(x, y, w, h, f) local(p) (
 // with Shift in mouse_cap even when no button is down. ysfx packs the arrow
 // codes the other way round and reports Shift only during a click, so the
 // checker hands them in here instead.
+// A line: its ends, colour and the pixel under its middle before it is drawn.
+function t_line(x1, y1, x2, y2) local(p, pr, pg, pb, rr, gg, bb, aa) (
+  p = T_LOG + t_n * T_W;
+  p[0] = 3; p[1] = x1; p[2] = y1; p[3] = x2; p[4] = y2;
+  p[5] = gfx_r; p[6] = gfx_g; p[7] = gfx_b; p[8] = gfx_a;
+  rr = gfx_r; gg = gfx_g; bb = gfx_b; aa = gfx_a;
+  gfx_x = floor((x1 + x2) / 2); gfx_y = floor((y1 + y2) / 2);
+  gfx_getpixel(pr, pg, pb);
+  p[9] = floor(pr * 255 + 0.5) * 65536 + floor(pg * 255 + 0.5) * 256 + floor(pb * 255 + 0.5);
+  gfx_r = rr; gfx_g = gg; gfx_b = bb; gfx_a = aa;
+  t_n += 1;
+  gfx_line(x1, y1, x2, y2);
+);
 function t_getchar() local(k) ( k = t_key; t_key = 0; k ? k : gfx_getchar(); );
 function t_rect4(x, y, w, h) ( t_rect(x, y, w, h, 1); );
 function t_rect5(x, y, w, h, f) ( t_rect(x, y, w, h, f); );
@@ -154,14 +167,16 @@ def instrument(text):
     g = secs["gfx"]
     clean = strip_code(g)
     edits = []
-    for name in ("gfx_drawstr", "gfx_rect"):
+    for name in ("gfx_drawstr", "gfx_rect", "gfx_line"):
         for m in re.finditer(r"(?<![\w.])" + name + r"\(", clean):
             _, n = call_args(clean, m.end() - 1)
             if name == "gfx_drawstr" and n not in (1, 2, 4):
                 raise ValueError("gfx_drawstr with %d arguments" % n)
             if name == "gfx_rect" and n not in (4, 5):
                 raise ValueError("gfx_rect with %d arguments" % n)
-            new = ("t_drawstr%d(" % n) if name == "gfx_drawstr" else ("t_rect%d(" % n)
+            if name == "gfx_line" and n != 4:
+                raise ValueError("gfx_line with %d arguments" % n)
+            new = {"gfx_drawstr": "t_drawstr%d(" % n, "gfx_rect": "t_rect%d(" % n, "gfx_line": "t_line("}[name]
             edits.append((m.start(), m.end(), new))
     for a, b, new in sorted(edits, reverse=True):
         g = g[:a] + new + g[b:]
@@ -254,13 +269,13 @@ def static_checks(text):
 
 # ---------------------------------------------------------------- the host
 class Frame:
-    def __init__(self, texts, rects, focus, vars_):
-        self.texts, self.rects, self.focus, self.v = texts, rects, focus, vars_
+    def __init__(self, texts, rects, focus, vars_, lines=()):
+        self.texts, self.rects, self.focus, self.v, self.lines = texts, rects, focus, vars_, lines
 
 
 class UI:
     VARS = ("ui_s ui_zoom focus_id fl_n focus_base FOCUS_W top_h scroll content_h sel_slot "
-            "slider1 slider12 slider18 slider10 gfx_w gfx_h u_n status_on").split()
+            "slider1 slider12 slider18 slider10 gfx_w gfx_h u_n status_on cx cy cw chh").split()
 
     def __init__(self, host, jsfx, w=820, h=730, scale=1):
         self.p = subprocess.Popen([host, jsfx], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -307,7 +322,7 @@ class UI:
         mem = [float(x) for x in mem]
         focus = [dict(id=int(mem[i * W]), x=mem[i * W + 1], y=mem[i * W + 2], w=mem[i * W + 3],
                       h=mem[i * W + 4], kind=int(mem[i * W + 5])) for i in range(n)]
-        texts, rects = [], []
+        texts, rects, lines = [], [], []
         for l in out:
             if not l.startswith("LOG "):
                 continue
@@ -321,7 +336,9 @@ class UI:
                                   texth=p[11], bg=bgs.most_common(1)[0][0]))
             elif p[0] == 2:
                 rects.append(dict(x=p[1], y=p[2], w=p[3], h=p[4], col=col, a=p[8], fill=p[9]))
-        return Frame(texts, rects, focus, v)
+            elif p[0] == 3:
+                lines.append(dict(x1=p[1], y1=p[2], x2=p[3], y2=p[4], col=col, a=p[8], bg=int(p[9])))
+        return Frame(texts, rects, focus, v, lines)
 
     def tab_to(self, fid, limit=80):
         for _ in range(limit):
@@ -423,6 +440,42 @@ def frame_rules(f, label, cols):
             elif hov > 0 and -vov < 12 * S - 1:
                 near.append("%s and %s %.0f apart" % (name(a["id"]), name(b["id"]), -vov))
     check(not near, "%s: controls are at least 12 points apart" % label, "; ".join(near[:4]))
+    # 1.2: nothing is cut short with an ellipsis - the message bar wraps instead.
+    cut = ["'%s'" % t["s"] for t in f.texts if t["s"].endswith("…")]
+    check(not cut, "%s: no text is cut short with an ellipsis" % label, ", ".join(cut[:3]))
+    # 1.2: the edge of every field and setting is 3:1 on its own fill and on the ground.
+    weak = []
+    for c in view:
+        if c["kind"] not in (2, 3):
+            continue
+        same = [r for r in f.rects if abs(r["x"] - c["x"]) < 0.5 and abs(r["y"] - c["y"]) < 0.5 and
+                abs(r["w"] - c["w"]) < 0.5 and abs(r["h"] - c["h"]) < 0.5]
+        fills = [r["col"] for r in same if r["fill"]]
+        edges = [r["col"] for r in same if not r["fill"]]
+        if not fills or not edges:
+            weak.append("%s has no edge" % name(c["id"]))
+            continue
+        for under in (fills[-1], cols["C_INK"]):
+            if ratio(edges[-1], under) < 3:
+                weak.append("%s #%06X on #%06X %.2f:1" % (name(c["id"]), edges[-1], under, ratio(edges[-1], under)))
+    check(not weak, "%s: the edge of every field and setting is 3:1 on its fill and the ground" % label,
+          "; ".join(weak[:4]))
+    # 1.2: the canvas's marks - the stage boundaries, the floor, the curve and
+    # the playhead - are 3:1 on every band of the canvas. Exempt: the grid
+    # (C_BEAT) and the faint wash under the curve.
+    faint = set()
+    cx, cy, cw, chh = (f.v[k] for k in ("cx", "cy", "cw", "chh"))
+    for l in f.lines:
+        if l["a"] < 0.2 or l["col"] == cols["C_BEAT"]:
+            continue
+        if not (cx - 0.5 <= min(l["x1"], l["x2"]) and max(l["x1"], l["x2"]) <= cx + cw + 0.5 and
+                cy - 0.5 <= min(l["y1"], l["y2"]) and max(l["y1"], l["y2"]) <= cy + chh + 0.5):
+            continue
+        for band in ("C_ROLL", "C_SUNK", "C_BEAT"):
+            fg = mix(l["col"], cols[band], l["a"])
+            if ratio(fg, cols[band]) < 3:
+                faint.add("#%06X on %s %.2f:1" % (fg, band, ratio(fg, cols[band])))
+    check(not faint, "%s: every mark on the canvas is 3:1 on its bands" % label, "; ".join(sorted(faint)[:3]))
 
 
 def ink_bar(f, cols, fid):
@@ -498,6 +551,10 @@ def run_window(host, jsfx, cols, shots):
     u.tab_to(102)
     u.key("space")
     check(int(u.var("slider1")["slider1"]) == 1, "Space presses a focused button (Strings chosen)")
+    f = u.look()
+    msg = [t["s"] for t in f.texts if t["y"] < f.v["top_h"] and t["s"].startswith("Loaded the Strings preset")]
+    check(bool(msg) and "Undo" in " ".join(t["s"] for t in f.texts if t["y"] < f.v["top_h"]),
+          "choosing a preset says what it replaced and that Undo puts it back")
     u.tab_to(201)
     u.key("ret")
     check(int(u.var("slider12")["slider12"]) == 0, "Return toggles a focused lane box (lane 2 off)")
@@ -589,6 +646,46 @@ def run_window(host, jsfx, cols, shots):
     dflt = next(c for c in f.focus if c["id"] == 101)
     check(int(f.v["focus_id"]) == 101 and dflt["y"] >= f.v["top_h"] and dflt["y"] + dflt["h"] <= f.v["gfx_h"],
           "... and Tab on round to Default scrolls back up to it", "Default at y %.0f, scroll %.0f" % (dflt["y"], f.v["scroll"]))
+    # 1.2: at 200% in the small window the message wraps, whole, and the bar
+    # keeps its height whatever the pointer or the focus points at.
+    u.send("setvar ui_zoom 2")
+    u.tab_to(121)
+    u.key("ret")
+    u.key("esc")
+    f = u.look()
+    last = max(i for i, t in enumerate(f.texts) if t["s"] == "Options")
+    words = [t["s"] for t in f.texts[last + 1:]]
+    whole = " ".join(words)
+    inside = all(t["y"] + t["h"] <= f.v["top_h"] for t in f.texts[last + 1:])
+    check(len(words) > 1 and inside and whole.startswith("Copied") and whole.endswith("Undo puts them back."),
+          "at 200% a long message wraps onto more lines inside the bar rather than being cut short", " | ".join(words))
+    heights = set()
+    for fid in (113, 110, 101, 105, 201, 211, 1, 8, 121, 33, 40):
+        u.tab_to(fid)
+        heights.add(round(u.var("top_h")["top_h"]))
+    u.tab_to(113)
+    u.key("ret")
+    heights.add(round(u.var("top_h")["top_h"]))
+    check(len(heights) == 1, "the message bar keeps one height as the focus moves and the message goes",
+          "heights %s" % sorted(heights))
+    u.close()
+    # 1.2: a window narrower than the layout needs at 200% shrinks the
+    # interface to fit (never below 100%) instead of drawing past its edge.
+    for w, z, nm in ((560, 2, "200% in a 560-wide window"), (340, 1, "100% in a 340-wide window")):
+        u = ui(w, 600)
+        u.send("setvar ui_zoom %g" % z)
+        f = u.look()
+        frame_rules(f, nm, cols)
+        if shots and z == 2:
+            u.shot(os.path.join(shots, "window-200-narrow.png"), w, 600)
+        u.close()
+    # the canvas says how to draw on it
+    u = ui()
+    cv = u.var("cx", "cy", "cw", "chh")
+    u.send("mouse %d %d 0 0 0" % (cv["cx"] + cv["cw"] / 2, cv["cy"] + cv["chh"] / 2))
+    f = u.look()
+    hov = [t for t in f.texts if t["y"] < f.v["top_h"] and t["s"].startswith("Envelope: drag")]
+    check(bool(hov), "pointing at the canvas says how to draw on it")
     u.close()
     # Every size goes through the scale factor: 200% in a window twice the size
     # draws every control and every word exactly twice as big and as far.

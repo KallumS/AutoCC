@@ -289,10 +289,11 @@ be exported and shared as `.rpl` banks like any other REAPER preset.
 From the top:
 
 - **The message bar.** Point at any control — or move to it with Tab — and the
-  bar says what it does. When you copy a shape, clear a lane, reset curves or
-  hit Panic, the bar says what happened, and the message **stays until you
-  click Dismiss** (or something newer replaces it); nothing disappears on a
-  timer. If the engine is bypassed, the bar says so. **Options** is at the
+  bar says what it does. When you choose a preset, copy a shape, clear a lane,
+  reset curves or hit Panic, the bar says what happened (and that Undo puts it
+  back), and the message **stays until you click Dismiss** (or something newer
+  replaces it); nothing disappears on a timer. A long message wraps onto a
+  second line rather than being cut short. If the engine is bypassed, the bar says so. **Options** is at the
   right of the bar.
 - **Preset** buttons, and **Panic / Reset** on the right.
 - **CC Lanes** and the **Envelope** you draw in.
@@ -307,10 +308,15 @@ screen.
 
 **Options → Interface Size** makes everything in the window larger: 100%,
 125%, 150% or 200%. Every control, word and gap grows together, and the layout
-rearranges when the window is narrow. If the window is too small for the size
-you chose, scroll it with the mouse wheel (or just press Tab — the window
-scrolls to whatever has the focus), or make the FX window larger. The size is
-saved with the project.
+rearranges when the window is narrow. In a window too narrow for the size you
+chose, everything shrinks just enough to fit across (never below 100%), so
+nothing is drawn past the right edge. If the window is too short, scroll it
+with the mouse wheel (or just press Tab — the window scrolls to whatever has
+the focus), or make the FX window larger. The size is saved with the project.
+
+The edges of the fields and Global settings, and the lines on the envelope
+canvas (where each stage starts and ends, and the floor), are drawn bright
+enough to see against the dark ground.
 
 On a Retina screen the window draws at full resolution, and the text uses the
 system font (San Francisco on a Mac, Segoe UI on Windows).
