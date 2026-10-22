@@ -41,24 +41,51 @@ MOVE = 4                    # CC steps that count as movement, not jitter
 FAMILY = [
     ('perc',  r'perc|timp|cym|drum|snare|taiko|boom|hits?\b|gong|tam|toms?\b|djun|dhol|'
               r'triang|tamb|marimb|glock|celest|bells|xylo|kit|stomp|thump|clock'),
-    ('keys',  r'\((choir|great|swell)\)|piano|harp|guitar|gtr|organ|rhodes|celesta|mandolin|kora|oud|pluck|'
+    ('keys',  r'\((choir|great|swell)\)|choir concert|piano|harp|guitar|gtr|organ|rhodes|celesta|mandolin|kora|oud|pluck|'
               r'keys|synth|zebra|omni|edna|pad|arp|seq|bass pulse|sub bass|drone|'
-              r'nylon|pre-bass|glass|fx|growl|sweep|groove|batflap|posthuman'),
+              r'nylon|pre-bass|glass|fx|growl|sweep|groove|batflap|posthuman|'
+              r'diva|falcon|prologue|cimbalom|dulcimer|banjo|setar|dulcitone|orstphone'),
     ('choir', r'choir|vox|voice|whit[ai]c|syllab|venus|mars |oh-oo|lacrim|lacrm|\bahh\b|'
-              r'\bmm\b|ooo|vocal'),
-    ('brass', r'brass|brs|horn|hn\b|fhn|tpt|trumpet|trb|tbn|tromb|bone|tuba|cimb|'
+              r'\bmm\b|ooo|vocal|rhodope'),
+    ('brass', r'brass|brs|horn|hn\b|fhn|tpt|trump|trb|tbn|tromb|bone|tuba|cimb|'
               r'cornet|flugel'),
     ('winds', r'wood|winds?\b|\bww\b|flute|fl\b|picc|oboe|clar|bsn|bassoon|recorder|'
-              r'cor anglais|english horn|sax|shakuhachi'),
-    ('strings', r'\bstr\b|string|vln|violin|vla|viola|cello|celli|\bvc\b|\bcb\b|bass|ens|'
+              r'cor anglais|english horn|sax|shakuhachi|bansuri|pipes|whistle'),
+    ('strings', r'\bstr\b|string|vln|violin|vla|viola|cello|celli|\bcell\b|\bbas\b|\bvc\b|\bcb\b|bass|ens|'
                 r'con sord|flaut|harm|legato|leg\b|sus|long|scs|css|mural|albion|ark'),
 ]
 SHORT = (r'spic|stac|short|\bsh\b|pizz|marc|portato|col legno|hits?\b|accent|acct|'
-         r'falls?\b|core tech|trem|trill|ostinat|triplet|arps?\b|16th')
+         r'falls?\b|core tech|trem|trill|ostinat|triplet|arps?\b|16th|\bsht\b|'
+         r'(?<=full)sh\b|pulse|episodic|runs\b')
+
+
+def despace(name):
+    """'C e l l  B a s  4' -> 'Cell Bas 4': some exports space out every letter,
+    with a wider gap between words."""
+    words = []
+    for part in re.split(r'\s{2,}', name.strip()):
+        toks, run = [], []
+        for t in part.split(' ') + ['']:          # join runs of 2+ single letters
+            if len(t) == 1 and t.isalpha():
+                run.append(t)
+                continue
+            toks += [''.join(run)] if len(run) > 1 else run
+            run = []
+            if t:
+                toks.append(t)
+        words.append(' '.join(toks))
+    out = []          # 'F  u  l  l' arrives as four one-letter words
+    for w in words:
+        if out and len(w) == 1 and w.isalpha() and out[-1].isalpha() and \
+                (len(out[-1]) == 1 or out[-1][-1].islower() and w.islower()):
+            out[-1] += w
+        else:
+            out.append(w)
+    return ' '.join(out)
 
 
 def classify(name):
-    n = name.lower()
+    n = despace(name).lower()
     fam = 'other'
     for f, rx in FAMILY:
         if re.search(rx, n):

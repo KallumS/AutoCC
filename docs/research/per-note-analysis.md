@@ -214,9 +214,69 @@ The options as they were put:
    0.3–0.6 s; below that, carry on from the current level with no new rise
    (finding 4).
 
+## Update: six more Balfe cues (Set 1 grows to 21)
+
+Added 2026-10-22: *His Dark Materials* — Alethiometer, End Credits, Mrs
+Coulter Theme, The Tales of Lee Scoresby, Teleutaia (S2) — and Home Symphony
+in Oh. After filtering, Set 1 is **335 tracks** (149 strings, 116 brass, 47
+woodwinds, 23 choir), up from 224. **1.3's presets are still fitted to the
+original 15.**
+
+**What the files say about instruments.** None has MIDI instrument-name tags,
+and the program changes are patch numbers, not General MIDI. The track names
+carry it:
+- End Credits and Home Symphony use Spitfire's codes ("SF SYM STR VLN 1 Pleg"
+  = Symphonic Strings, Violins 1, Performance Legato).
+- Teleutaia names its libraries: Spitfire Mural, Albion 3, Solo Strings,
+  Sacconi Quartet; CineBrass; Berlin Woodwinds; Andy Findon.
+- Alethiometer, Mrs Coulter and Lee Scoresby name only the section ("Violins
+  1", "Horns 1s", "Fl Sh 2 g"), with orchestrator notes ("NOTATE AS CUE",
+  "DON'T NOTATE", "PRINTED BELOW"). They were prepared for live players.
+
+`ccstudy.py` now reads letter-spaced names ("V i o l i n s  1"), "Trump",
+"Sht" and a few more. That moved one track of the original 15 ("CB Trumpets
+Sht" was counted as a long); every figure for the 15 is unchanged.
+
+**Results with 21 cues** (isolated notes; mean change while held):
+
+| Lane | Family | Notes | Note-on | +0.2 s | +0.5 s | +1 s | +2 s | +3 s | Fit (start, swell, rise, shape, settle) |
+|---|---|---|---|---|---|---|---|---|---|
+| CC1 | strings | 426 | 84 | +7 | +13 | +19 | +29 | +33 | 84, +31, 2200 ms, 0.66, none |
+| CC1 | brass | 312 | 102 | +4 | +6 | +6 | +4 | +6 | 102, +7, 1800 ms, 0.22, 200 ms to +4 |
+| CC1 | woodwinds | 94 | 46 | +7 | +12 | +15 | +17 | +16 | 46, +17, 800 ms, 0.66, none |
+| CC1 | choir | 41 | 51 | +8 | +13 | +16 | +26 | +22 | 51, +27, 2200 ms, 0.54, 800 ms to +22 |
+| CC11 | strings | 440 | 94 | +7 | +13 | +19 | +25 | +25 | 94, +24, 1800 ms, 0.54, none |
+| CC11 | brass | 318 | 78 | +4 | +6 | +6 | +6 | +7 | 78, +7, 1800 ms, 0.23, 400 ms to +4 |
+| CC11 | woodwinds | 133 | 69 | +7 | +10 | +17 | +14 | +19 | 69, +19, 1200 ms, 0.66, 800 ms to +15 |
+| CC11 | choir | 40 | 76 | +7 | +11 | +13 | +20 | +19 | 76, +19, 1800 ms, 0.44, none |
+
+Fit error is 1.1–2.3 CC RMS. Everything else holds:
+- CC11 ÷ CC1 range is 0.84 (was 0.87), with correlation 0.97.
+- Notes inside lines stay within ±3.
+- The taper before note-off is +14 / +17 at −1 s.
+- Velocity ρ is 0.11 (CC1) and 0.02 (CC11); tempo ρ is 0.24.
+
+**1.3's presets against the 21 cues** (RMS error over the first 3 s): strings
+CC11 1.5, strings CC1 7.5, woodwinds 5.7–6.0, brass CC1 4.4, Default 6–11, and
+brass CC11 **24**. Almost all of it is the starting level, not the swell.
+
+**The starting level follows the piece.** Brass CC11's isolated-note start by
+cue ranges from 109–125 in loud action themes (Penguins of Madagascar,
+Mission: Impossible, AC3, Home Symphony) to 45–60 in quiet *His Dark Materials*
+cues (Mrs Coulter, Teleutaia, HDM2). Two of the six new cues are quiet ones.
+This is direct support for Dynamic: one start level cannot suit both.
+
+**CC21 now has a little data** (270 notes, 9 tracks in 3 cues: Spitfire
+Symphonic and Solo Strings, Sacconi Quartet, Berlin Woodwinds, Andy Findon
+bansuri). Balfe **sets CC21 as a level and leaves it**: 78% of notes are flat,
+and the typical level is high (median 92–118 on most tracks; 43 and 59 on two).
+No track shows AutoCC's late 0→25 swell. The evidence is thin, but it points
+the same way as CC7: a held setting, not a per-note gesture.
+
 ## Unanswered — for Set 2 or more data
 
-- Vibrato (CC21): no usable data in either set.
-- Woodwinds and choir: too few isolated notes in Set 1.
+- Vibrato (CC21): 270 notes in 3 cues so far (see the update above) — enough
+  to say Balfe holds it, not enough to set a level.
+- Woodwinds and choir: still thin (94 and 41 isolated notes with 21 cues).
 - Library dependence: Set 1 is almost all Spitfire, where CC1 is the dynamics
   crossfade. Levels may not carry to other libraries.

@@ -60,6 +60,9 @@ Before a phrase ending followed by ≥ 1 s of silence, CC1 and CC11 fall
 **~14 over the final second** before note-off, and only 3–4 more after. Set 2
 doesn't do this (±1).
 
+With the six cues added in the second batch (21 in all), the final-second
+taper is +14 (CC1) / +17 (CC11) at −1 s, then −4 to −6 after the key lifts.
+
 ### Between phrases, CC dips and comes back early (Set 1)
 
 Half a second before a phrase that starts from silence, CC sits **18–26
