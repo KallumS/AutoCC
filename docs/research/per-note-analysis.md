@@ -163,7 +163,7 @@ is the nearest it can get.
   can do. An offline ReaScript (CLAUDE.md §5) could shape each note to its
   length.
 
-## Proposed presets (Set 1 fit)
+## Proposed presets (first fit, 15 cues — superseded by the 21-cue fit below)
 
 AutoCC terms: Floor = start level, Peak = start + swell. Fall is not
 measured, for the reason in finding 8; ~1 s is a suggestion. Velocity
@@ -219,8 +219,7 @@ The options as they were put:
 Added 2026-10-22: *His Dark Materials* — Alethiometer, End Credits, Mrs
 Coulter Theme, The Tales of Lee Scoresby, Teleutaia (S2) — and Home Symphony
 in Oh. After filtering, Set 1 is **335 tracks** (149 strings, 116 brass, 47
-woodwinds, 23 choir), up from 224. **1.3's presets are still fitted to the
-original 15.**
+woodwinds, 23 choir), up from 224. 1.3's presets were then re-fitted to all 21 (below).
 
 **What the files say about instruments.** None has MIDI instrument-name tags,
 and the program changes are patch numbers, not General MIDI. The track names
@@ -272,6 +271,34 @@ bansuri). Balfe **sets CC21 as a level and leaves it**: 78% of notes are flat,
 and the typical level is high (median 92–118 on most tracks; 43 and 59 on two).
 No track shows AutoCC's late 0→25 swell. The evidence is thin, but it points
 the same way as CC7: a held setting, not a per-note gesture.
+
+### Decision: Balfe is the reference (2026-10-22)
+
+The owner's rule: where the data shows how Lorne Balfe does something, AutoCC
+does it that way. So 1.3's presets were **re-fitted to all 21 cues** (the
+table above), and CC7 and CC21 became held levels at his medians: CC7 **94**
+(20 tracks) and CC21 **92** (9 tracks).
+
+Re-simulated after the change (full velocity, CC1/CC11, 0 → 0.2 → 0.5 → 1 →
+2 → 3 s):
+
+| Preset | AutoCC | Balfe (21 cues) |
+|---|---|---|
+| Strings | 85/94 → 91/101 → 97/106 → 103/111 → 114/118 → 116/118 | 85/94 → 91/101 → 97/107 → 103/113 → 113/119 → 117/119 |
+| Brass | 102/78 → 106/82 → 107/83 → 108/84 → 106/84 → 106/82 | 102/78 → 106/82 → 108/84 → 108/84 → 106/84 → 108/85 |
+| Woodwinds | 46/69 → 53/75 → 58/80 → 63/86 → 63/84 → 63/84 | 46/69 → 53/76 → 58/79 → 61/86 → 63/83 → 62/88 |
+| Default | 91/85 → 97/91 → 101/94 → 105/98 → 112/103 → 115/104 | 91/85 → 97/91 → 101/95 → 105/99 → 112/103 → 115/105 |
+
+The restart gap stays at 0.4 s. Notes within 0.3 s of the last key-up never
+swell, and notes after 0.6 s always do. Between 0.3 and 0.5 s the two batches
+disagree:
+
+| Gap | 15 cues, CC1 at +1 s | 21 cues, CC1 at +1 s |
+|---|---|---|
+| 0.30–0.40 s | −10 to +9 | +26 to +36 |
+| 0.40–0.50 s | +16 | 0 |
+
+So the data doesn't place the threshold more precisely than 0.4 s.
 
 ## Unanswered — for Set 2 or more data
 

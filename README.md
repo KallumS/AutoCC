@@ -49,31 +49,36 @@ Each lane sits in its own value range so they don't fight each other:
 
 | Lane | Floor | Peak | Sustain | Across the presets |
 |------|-------|------|---------|--------------------|
-| CC1  | 40–105 | 68–115 | 57–109 | starts at the dynamic, swells +10 to +28 |
-| CC11 | 64–100 | 87–120 | 87–120 | follows CC1 at ~0.87 of its swell, starting higher |
-| CC7  | 118   | 118     | 118   | **flat** — a mix level, not a performance lane |
-| CC21 | 0     | 25      | 25    | **peaks at 20%** — deliberately minimal |
+| CC1  | 46–102 | 63–116 | 63–116 | starts at the dynamic, swells +7 to +31 |
+| CC11 | 69–94 | 85–118 | 82–118 | follows CC1 at ~0.84 of its swell |
+| CC7  | 94    | 94      | 94    | **held** — a level, not a gesture |
+| CC21 | 92    | 92      | 92    | **held** — a level, not a gesture |
 
-CC7 holds still at 118 (93%): in the professional mock-ups AutoCC's presets
-were measured from, nobody moved CC7 within a note. CC21 is capped low because
-it usually drives vibrato or tightness, where a high value is rarely wanted.
+CC7 and CC21 hold still. In the mock-ups AutoCC's presets are measured from,
+Lorne Balfe sets each one as a level per track and leaves it: 85% of notes see
+no CC7 movement, and 78% none on CC21. The presets use his median levels, 94
+for CC7 and 92 for CC21. Set them to whatever your library wants; if your
+library uses CC21 for something other than vibrato, turn the lane off.
 
 ### Where the numbers come from
 
-The presets are fitted to Lorne Balfe's own mock-ups: fifteen cues, almost all
-in Spitfire libraries, with 17 mock-ups of other scores as a cross-check
-(`docs/research/per-note-analysis.md`). The envelope matches his average held
-note to within about one CC step. What that data says, and AutoCC now does:
+The presets are fitted to Lorne Balfe's own mock-ups, which AutoCC treats as
+the reference: 21 cues, almost all in Spitfire libraries, with 17 mock-ups of
+other scores as a cross-check (`docs/research/per-note-analysis.md`). The
+envelope matches his average held note to within one or two CC steps. What
+that data says, and AutoCC now does:
 
-- **A note starts at the dynamic, not at zero.** Strings start CC1 at 80,
-  brass at 105, woodwinds at 40. **Dynamic** in the Global strip moves that
+- **A note starts at the dynamic, not at zero.** Strings start CC1 at 85,
+  brass at 102, woodwinds at 46. How loud the piece is matters more than the
+  instrument: brass CC11 starts at 109–125 in his action themes and 45–60 in
+  quiet *His Dark Materials* cues. **Dynamic** in the Global strip moves that
   starting level for CC1 and CC11 together, keeping the swell the same size.
   Turn it down for a quiet passage, or automate it to shape a phrase.
-- **The swell is small and fast early:** about +25 over 2–3 seconds, with half
-  of it in the first second. Brass blooms by about +10 within a second, then
-  eases back.
-- **CC11 follows CC1.** On the same notes the two correlate 0.96, with CC11
-  moving about 0.87 as far as CC1 and starting about 15 higher.
+- **The swell is fast early:** strings +31 over about 2 seconds, woodwinds
+  +17 within a second, both held for as long as the note is. Brass blooms by
+  about +7 almost at once, then eases back.
+- **CC11 follows CC1.** On the same notes the two correlate 0.97, with CC11
+  moving about 0.84 as far as CC1.
 - **Notes that follow closely don't swell again.** In Legato, a note that starts
   within 0.4 seconds of the last key coming up carries on from where the lane
   is, as a player continuing a line would.
@@ -83,33 +88,6 @@ note to within about one CC step. What that data says, and AutoCC now does:
 If your library treats CC11 as the main dynamics control, or you want CC11 to
 stay still, mute its lane or flatten it (set *Peak* and *Sustain* to its
 *Floor*).
-
-### CC21 builds late, then drops away
-
-Vibrato is mostly a late-note gesture, so CC21 is shaped differently from the
-other lanes: a long, heavily curved rise that stays near zero for most of its
-attack, no settle stage (it holds at the top once it arrives), and a very short
-fall.
-
-| Preset | 50% of peak at | 90% of peak at | Back to 10% after note-off |
-|--------|----------------|----------------|-----------------------------|
-| Strings   | 1405 ms | 1730 ms | 140 ms |
-| Brass     |  685 ms |  860 ms | 115 ms |
-| Woodwinds |  610 ms |  765 ms | 100 ms |
-| Default   |  840 ms | 1055 ms | 125 ms |
-
-The practical effect is that note length decides how much vibrato you get,
-without you doing anything:
-
-| Held note (Strings) | CC21 reaches |
-|---------------------|--------------|
-| 250 ms  | 0.1%  |
-| 500 ms  | 0.5%  |
-| 1000 ms | 3.8%  |
-| 2000 ms | 20% (full) |
-
-Short runs stay dry, long notes bloom into vibrato near the end, and it clears
-almost immediately on release.
 
 Plus three **free lanes** (5–7). Pick any CC number `0–127` and draw whatever
 curve you want. They start blank.
@@ -146,9 +124,9 @@ from Strings to Brass will never turn a lane back on behind your back.
 
 * **Rise** — from the current value up to *peak*, following the rise curve.
 * **Settle** — peak eases down to the *sustain* level (the natural post-attack
-  settle of a real breath). Measured at velocity 100, the drop is about 6
-  points on Brass CC1 and 10 on Woodwinds. Strings don't settle: the measured
-  string parts keep their swell for as long as the note is held.
+  settle of a real breath). Measured at velocity 100, the drop is about 3
+  points on Brass CC1 and CC11 and 4 on Woodwinds CC11. Strings don't settle:
+  the measured string parts keep their swell for as long as the note is held.
 * **Sustain** — holds while the note is held.
 * **Fall** — on note-off, drops from wherever it is back to *floor*, following
   the fall curve.
@@ -178,14 +156,14 @@ fall. Note that this is still a *three*-stage fall shape, not a decay to zero �
 there to the floor, each with its own curve. Total length is *Rise* + *Settle* +
 *Fall* and nothing else affects it.
 
-Measured on Strings CC1 (start 80, rise 2600, settle 0, fall 1000, Hold 800)
+Measured on Strings CC1 (start 85, rise 2200, settle 0, fall 1000, Hold 800)
 with the key touched for only 200 ms:
 
 | Mode | What happens |
 |------|--------------|
-| Gated | fall starts at 200 ms, CC1 peaks at **86** — six points into the swell |
-| One-Shot | full arc, peaks at **108**, finishes at 4400 ms |
-| ADR | full arc, peaks at **108**, finishes at 3600 ms |
+| Gated | fall starts at 200 ms, CC1 peaks at **91** — six points into the swell |
+| One-Shot | full arc, peaks at **116**, finishes at 4000 ms |
+| ADR | full arc, peaks at **116**, finishes at 3200 ms |
 
 In One-Shot and ADR the sustain pedal does nothing, since there is no note-off
 to defer. The canvas draws the hold band to scale in these modes, so what you
@@ -280,16 +258,15 @@ Drawing is available on **all** lanes, fixed and free alike.
 
 | Preset        | CC1: start → peak, rise | Character |
 |---------------|-------------------------|-----------|
-| **Default**   | 81 → 108 over 4 s | Every family together; slow, steady swell |
-| **Strings**   | 80 → 108 over 2.6 s | Fast off the mark, keeps swelling, holds it |
-| **Brass**     | 105 → 115 over 1.8 s, settles to 109 | Starts loud, quick bloom, eases back |
-| **Woodwinds** | 40 → 68 over 2.6 s, settles to 57 | Starts soft, swells, settles part way (from five cues only) |
+| **Default**   | 91 → 115 over 2.6 s | Every family together; steady swell, held |
+| **Strings**   | 85 → 116 over 2.2 s | Fast off the mark, keeps swelling, holds it |
+| **Brass**     | 102 → 109 over 1.8 s, settles to 106 | Starts loud, near-instant bloom, eases back |
+| **Woodwinds** | 46 → 63 over 0.8 s | Starts soft, quick swell, holds it |
 
 Every preset falls back over 1 second when the keys come up: Balfe starts his
 fade *before* the note ends, which a plug-in playing live can't see coming.
 
-CC21 follows the same family character but on its own much longer timescale —
-see *CC21 builds late* above.
+CC7 (94) and CC21 (92) are held levels in every preset.
 
 Preset buttons only rewrite the four fixed lanes, so custom lanes you have
 built survive while you audition instruments.

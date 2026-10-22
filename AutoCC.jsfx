@@ -210,39 +210,40 @@ function setslot(s, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
 
 // Built-in instrument presets only touch the four fixed lanes so that any
 // custom lanes the user has built stay intact when auditioning presets.
-// Fitted to Lorne Balfe's mock-ups (docs/research/per-note-analysis.md, Set 1),
-// each to within about 1 CC step: the note starts at the dynamic, swells about
-// +25 with a fast-early rise (shape 0.35-0.6) and does not settle, except brass,
-// which blooms and eases back. CC11 follows CC1 at ~0.87 of its range, starting
-// higher. CC7 is flat - nobody moved it per note. CC21 is unchanged: neither set
-// had usable vibrato data. Fall is not measurable live (Balfe tapers before the
-// key lifts), so it is a plain 1 s. Velocity is 15-20% because it barely
-// predicted CC (rho 0.0-0.2). Re-run tools/ccstudy.py before changing these.
+// Fitted to Lorne Balfe's mock-ups, which are the reference: Set 1, 21 cues
+// (docs/research/per-note-analysis.md), each lane to within 1-2.3 CC RMS. The
+// note starts at the dynamic and swells with a fast-early rise (shape
+// 0.22-0.66); strings and woodwinds hold the swell, brass blooms and eases
+// back. CC11 follows CC1 at ~0.84 of its range. CC7 and CC21 are levels Balfe
+// sets and leaves, so they are flat at his medians (94 and 92). Fall is not
+// measurable live (he tapers before the key lifts), so it is a plain 1 s.
+// Velocity is 15-20% because it barely predicted CC. Re-run tools/ccstudy.py
+// before changing these.
 function load_preset(p) (
   p == 1 ? (
-    // Strings: start at 80, swell +28 over 2.6 s, hold it
-    setslot(0,  1,  80, 108, 108, 2600,    0, 1000, 20, 0.57, 1.00);
-    setslot(1, 11,  96, 120, 120, 2200,    0, 1000, 15, 0.54, 1.00);
-    setslot(2,  7, 118, 118, 118,  650,  350,  800,  0, 1.60, 1.15);
-    setslot(3, 21,   0,  25,  25, 1800,    0,  180, 20, 2.80, 0.45);
+    // Strings: start at 85, swell +31 over 2.2 s, hold it
+    setslot(0,  1,  85, 116, 116, 2200,    0, 1000, 20, 0.66, 1.00);
+    setslot(1, 11,  94, 118, 118, 1800,    0, 1000, 15, 0.54, 1.00);
+    setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
+    setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   ) : p == 2 ? (
-    // Brass: start high, quick +10 bloom, ease back by half
-    setslot(0,  1, 105, 115, 109, 1800,  200, 1000, 20, 0.35, 1.00);
-    setslot(1, 11, 100, 112, 107, 1800,  200, 1000, 15, 0.41, 1.00);
-    setslot(2,  7, 118, 118, 118,  120,  200,  400,  0, 0.55, 0.85);
-    setslot(3, 21,   0,  25,  25,  900,    0,  150, 25, 2.60, 0.45);
+    // Brass: start high, a quick +7 bloom, ease back by half
+    setslot(0,  1, 102, 109, 106, 1800,  200, 1000, 20, 0.22, 1.00);
+    setslot(1, 11,  78,  85,  82, 1800,  400, 1000, 15, 0.23, 1.00);
+    setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
+    setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   ) : p == 3 ? (
-    // Woodwinds: start low, swell +28, settle back part way (5 cues only)
-    setslot(0,  1,  40,  68,  57, 2600, 1200, 1000, 20, 0.47, 1.00);
-    setslot(1, 11,  64,  87,  87, 3500,    0, 1000, 15, 0.47, 1.00);
-    setslot(2,  7, 118, 118, 118,  140,  150,  210,  0, 0.60, 0.70);
-    setslot(3, 21,   0,  25,  25,  800,    0,  130, 20, 2.60, 0.45);
+    // Woodwinds: start low, swell +17 within a second, hold it
+    setslot(0,  1,  46,  63,  63,  800,    0, 1000, 20, 0.66, 1.00);
+    setslot(1, 11,  69,  88,  84, 1200,  800, 1000, 15, 0.66, 1.00);
+    setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
+    setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   ) : (
-    // Default: every family together - start at 81, swell +27 over 4 s
-    setslot(0,  1,  81, 108, 108, 4000,    0, 1000, 20, 0.50, 1.00);
-    setslot(1, 11,  91, 115, 115, 4000,    0, 1000, 15, 0.44, 1.00);
-    setslot(2,  7, 118, 118, 118,  220,  180,  360,  0, 1.00, 1.00);
-    setslot(3, 21,   0,  25,  25, 1100,    0,  160, 20, 2.60, 0.45);
+    // Default: every family together - start at 91, swell +24 over 2.6 s
+    setslot(0,  1,  91, 115, 115, 2600,    0, 1000, 20, 0.54, 1.00);
+    setslot(1, 11,  85, 104, 104, 2200,    0, 1000, 15, 0.47, 1.00);
+    setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
+    setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   );
 );
 

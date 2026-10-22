@@ -165,23 +165,25 @@ Seven. 0–3 are fixed CCs (**CC1** dynamics, **CC11** expression, **CC7** volum
 **CC21** aux/vibrato) — the CC *number* is immutable, everything else is not.
 4–6 are free user lanes (`s_cc = -1` when blank).
 
-Preset values (1.3) are **fitted to measured professional mock-ups**
-(`docs/research/per-note-analysis.md`, Set 1 = Lorne Balfe), not chosen by ear.
-Re-run `tools/ccstudy.py` / `tools/ccreport.py` and re-fit before changing them.
-- CC1 starts at the **dynamic** (Strings 80, Brass 105, Woodwinds 40, Default
-  81) and swells about **+25** with a fast-early rise (Rise Shape 0.35–0.6).
-  Strings, Default and CC11 don't settle; Brass and Woodwinds do.
-- CC11 follows CC1 at **~0.87 of its swell**, starting higher. This replaced
-  1.2's "half of CC1" rule (decided 2026-10-22: the data showed correlation
-  0.96 and range ratio 0.87). The two-crescendo worry is the user's to manage
-  by muting or flattening the lane.
-- CC7 is **flat at 118** (floor = peak = sustain): nobody moved it per note.
-- CC21 is unchanged from 1.2 — no usable vibrato data. It peaks at **20%** (25
-  of 127) as a *late* gesture: long heavily-curved rise, no settle stage, short
-  fall, so note length decides vibrato depth on its own.
+**Lorne Balfe's practice is the reference** (the owner's rule, 2026-10-22):
+where the data shows how he does something, AutoCC does it that way. Preset
+values (1.3) are **fitted to his mock-ups** (`docs/research/per-note-analysis.md`,
+Set 1 = 21 cues), not chosen by ear. Re-run `tools/ccstudy.py` /
+`tools/ccreport.py` and re-fit before changing them.
+- CC1 starts at the **dynamic** (Strings 85, Brass 102, Woodwinds 46, Default
+  91) and swells with a fast-early rise (Rise Shape 0.22–0.66): strings +31,
+  woodwinds +17, brass +7 then easing back. In his cues the start level
+  follows the piece more than the instrument, which is what Dynamic is for.
+- CC11 follows CC1 at **~0.84 of its swell**. This replaced 1.2's "half of
+  CC1" rule (decided 2026-10-22: correlation 0.97, range ratio 0.84). The
+  two-crescendo worry is the user's to manage by muting or flattening the lane.
+- CC7 and CC21 are **held levels** (floor = peak = sustain, zero times): Balfe
+  sets each per track and leaves it (85% and 78% of notes flat). The levels are
+  his medians, **94** and **92**. This replaced 1.2's late 0→25 vibrato swell,
+  which no measured track did.
 - Fall is 1 s, linear, on CC1/CC11: not measurable live, because Balfe starts
   the fade before note-off. Velocity is 20% (CC1) / 15% (CC11), because it
-  barely predicted CC.
+  barely predicted CC (ρ 0.11 / 0.02).
 
 **Dynamic (slider 20, −64…+64)** shifts the Floor, Peak and Sustain of lanes 0
 and 1 (CC1, CC11) at runtime, through `eff_fl/eff_pk/eff_su`. The stored params
@@ -345,8 +347,8 @@ CC around each held note (`tools/ccstudy.py`, `tools/ccreport.py`; needs
 `pip install mido`; the MIDI is never committed). Headline: the per-note swell
 is about **+25** over ~2.5 s with a fast-early rise (exponent 0.35–0.6),
 starting at the dynamic rather than 0, and notes that start within ~0.3 s of
-the last key-up get no swell of their own. 1.3's presets, Dynamic and the
-restart rule come from it. Re-run it before changing presets. Phrase-level results live in
+the last key-up get no swell of their own. 1.3's presets (fitted to all 21
+Set 1 cues), Dynamic and the restart rule come from it. Re-run it before changing presets. Phrase-level results live in
 `phrase-shaping.md` and are out of scope for AutoCC.
 
 ## 4. Conventions when editing
