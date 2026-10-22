@@ -1,6 +1,6 @@
 desc:AutoCC - automatic MIDI CC curves for orchestral libraries
 author:AutoCC
-version:1.2
+version:1.3
 tags:MIDI processing controller orchestral expression
 about:
   AutoCC generates orchestral CC curves automatically from incoming MIDI notes.
@@ -32,6 +32,7 @@ slider16:0<0,1,1{Off,On}>-Lane 6 — User 2
 slider17:0<0,1,1{Off,On}>-Lane 7 — User 3
 slider18:0<0,2,1{Gated — Follows the Key,One-Shot — Plays Through,ADR — No Sustain}>-Envelope Mode
 slider19:800<0,10000,10>-One-Shot Hold (ms)
+slider20:0<-64,64,1>-Dynamic
 
 @init
 
@@ -54,7 +55,7 @@ s_rexp  = 160;
 PARAM_LEN = 176;
 
 // ---- runtime state
-r_stage = 176;    // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release
+r_stage = 176;    // 0 idle, 1 attack, 2 decay, 3 sustain, 4 release, 5 carry
 r_t     = 192;
 r_val   = 208;
 r_start = 224;
@@ -150,6 +151,23 @@ HOVER_F =  0.18;
 HELD_F  = -0.18;
 function clampv(v, a, b) ( max(a, min(b, v)) );
 
+// Dynamic (slider 20) moves where the two fixed dynamics lanes, CC1 and CC11,
+// start, peak and sustain, keeping the swell's size: in the measured
+// mock-ups the start level is the written dynamic while the swell above it
+// barely changes (docs/research/per-note-analysis.md). Every runtime and
+// drawing use of a level goes through these, so the canvas and the playhead
+// agree with what is sent.
+function dyn_of(s) ( s < 2 ? dyn : 0 );
+function eff_fl(s) ( clampv(s_floor[s] + dyn_of(s), 0, 127) );
+function eff_pk(s) ( clampv(s_peak[s]  + dyn_of(s), 0, 127) );
+function eff_su(s) ( clampv(s_sus[s]   + dyn_of(s), 0, 127) );
+
+// A note that starts this soon after every key went up continues the line
+// rather than starting a new swell: below ~0.3-0.6 s the measured notes get no
+// swell of their own. Seconds, not scaled by Time Scale - it is a measure of
+// the playing, not of the envelope.
+RESTART_GAP = 0.4;
+
 function mkcurve(base, s, e) local(i, p) (
   e = max(0.08, min(8, e));
   i = 0;
@@ -192,31 +210,39 @@ function setslot(s, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
 
 // Built-in instrument presets only touch the four fixed lanes so that any
 // custom lanes the user has built stay intact when auditioning presets.
+// Fitted to Lorne Balfe's mock-ups (docs/research/per-note-analysis.md, Set 1),
+// each to within about 1 CC step: the note starts at the dynamic, swells about
+// +25 with a fast-early rise (shape 0.35-0.6) and does not settle, except brass,
+// which blooms and eases back. CC11 follows CC1 at ~0.87 of its range, starting
+// higher. CC7 is flat - nobody moved it per note. CC21 is unchanged: neither set
+// had usable vibrato data. Fall is not measurable live (Balfe tapers before the
+// key lifts), so it is a plain 1 s. Velocity is 15-20% because it barely
+// predicted CC (rho 0.0-0.2). Re-run tools/ccstudy.py before changing these.
 function load_preset(p) (
   p == 1 ? (
-    // Strings: slow swelling rise, settled sustain, long gentle fall
-    setslot(0,  1,   0, 102,  89,  900, 400, 1100, 35, 2.00, 1.25);
-    setslot(1, 11,  65, 105, 101,  700, 300,  900, 25, 1.70, 1.20);
-    setslot(2,  7, 111, 119, 114,  650, 350,  800,  0, 1.60, 1.15);
-    setslot(3, 21,   0,  25,  25, 1800,   0,  180, 20, 2.80, 0.45);
+    // Strings: start at 80, swell +28 over 2.6 s, hold it
+    setslot(0,  1,  80, 108, 108, 2600,    0, 1000, 20, 0.57, 1.00);
+    setslot(1, 11,  96, 120, 120, 2200,    0, 1000, 15, 0.54, 1.00);
+    setslot(2,  7, 118, 118, 118,  650,  350,  800,  0, 1.60, 1.15);
+    setslot(3, 21,   0,  25,  25, 1800,    0,  180, 20, 2.80, 0.45);
   ) : p == 2 ? (
-    // Brass: fast attack with a bloom, firm sustain, moderate fall
-    setslot(0,  1,   0, 112,  92,  130, 220,  420, 55, 0.55, 0.85);
-    setslot(1, 11,  70, 110, 104,  100, 180,  380, 40, 0.50, 0.85);
-    setslot(2,  7, 110, 121, 113,  120, 200,  400,  0, 0.55, 0.85);
-    setslot(3, 21,   0,  25,  25,  900,   0,  150, 25, 2.60, 0.45);
+    // Brass: start high, quick +10 bloom, ease back by half
+    setslot(0,  1, 105, 115, 109, 1800,  200, 1000, 20, 0.35, 1.00);
+    setslot(1, 11, 100, 112, 107, 1800,  200, 1000, 15, 0.41, 1.00);
+    setslot(2,  7, 118, 118, 118,  120,  200,  400,  0, 0.55, 0.85);
+    setslot(3, 21,   0,  25,  25,  900,    0,  150, 25, 2.60, 0.45);
   ) : p == 3 ? (
-    // Woodwinds: quick speech-like attack, steady sustain, quick fall
-    setslot(0,  1,   0, 106,  91,  150, 160,  220, 45, 0.60, 0.70);
-    setslot(1, 11,  68, 105, 101,  120, 140,  200, 35, 0.55, 0.70);
-    setslot(2,  7, 112, 119, 114,  140, 150,  210,  0, 0.60, 0.70);
-    setslot(3, 21,   0,  25,  25,  800,   0,  130, 20, 2.60, 0.45);
+    // Woodwinds: start low, swell +28, settle back part way (5 cues only)
+    setslot(0,  1,  40,  68,  57, 2600, 1200, 1000, 20, 0.47, 1.00);
+    setslot(1, 11,  64,  87,  87, 3500,    0, 1000, 15, 0.47, 1.00);
+    setslot(2,  7, 118, 118, 118,  140,  150,  210,  0, 0.60, 0.70);
+    setslot(3, 21,   0,  25,  25,  800,    0,  130, 20, 2.60, 0.45);
   ) : (
-    // Default: neutral, usable on anything
-    setslot(0,  1,   0, 100,  87,  250, 200,  400, 40, 1.00, 1.00);
-    setslot(1, 11,  60, 100,  97,  200, 150,  350, 30, 1.00, 1.00);
-    setslot(2,  7, 112, 118, 114,  220, 180,  360,  0, 1.00, 1.00);
-    setslot(3, 21,   0,  25,  25, 1100,   0,  160, 20, 2.60, 0.45);
+    // Default: every family together - start at 81, swell +27 over 4 s
+    setslot(0,  1,  81, 108, 108, 4000,    0, 1000, 20, 0.50, 1.00);
+    setslot(1, 11,  91, 115, 115, 4000,    0, 1000, 15, 0.44, 1.00);
+    setslot(2,  7, 118, 118, 118,  220,  180,  360,  0, 1.00, 1.00);
+    setslot(3, 21,   0,  25,  25, 1100,    0,  160, 20, 2.60, 0.45);
   );
 );
 
@@ -355,6 +381,7 @@ function apply_sliders() (
   sync_en(6, slider17 >= 0.5);
   env_mode = slider18;
   hold_ms  = slider19;
+  dyn      = slider20;
   en_primed = 1;
 );
 
@@ -363,9 +390,9 @@ function reset_runtime() local(i) (
   while (i < NSLOTS) (
     r_stage[i] = 0;
     r_t[i]     = 0;
-    r_val[i]   = s_floor[i];
-    r_start[i] = s_floor[i];
-    r_relst[i] = s_floor[i];
+    r_val[i]   = eff_fl(i);
+    r_start[i] = eff_fl(i);
+    r_relst[i] = eff_fl(i);
     r_last[i]  = -1;
     r_vsc[i]   = 1;
     r_pndoff[i] = 0;
@@ -395,9 +422,9 @@ function env_tick(dt, off) local(i, st, t, fl, pk, su, v, dur, done) (
   while (i < NSLOTS) (
     slot_live(i) ? (
       st = r_stage[i];
-      fl = s_floor[i];
-      pk = fl + (s_peak[i] - fl) * r_vsc[i] * depth;
-      su = fl + (s_sus[i]  - fl) * r_vsc[i] * depth;
+      fl = eff_fl(i);
+      pk = fl + (eff_pk(i) - fl) * r_vsc[i] * depth;
+      su = fl + (eff_su(i) - fl) * r_vsc[i] * depth;
       t  = r_t[i] + dt;
       v  = r_val[i];
       done = 0;
@@ -428,6 +455,12 @@ function env_tick(dt, off) local(i, st, t, fl, pk, su, v, dur, done) (
             v = su;
             done = 1;
           );
+        ) : st == 5 ? (
+          // Carrying a line on (see carry_env): hold the level the note came
+          // in at, kept relative to the floor so Dynamic still moves it.
+          v = clampv(fl + r_relst[i], 0, 127);
+          // only Gated carries; if the mode changed meanwhile, fall from here
+          env_mode != 0 ? ( r_relst[i] = v; st = 4; t = 0; ) : ( done = 1; );
         ) : st == 4 ? (
           dur = s_rel[i] * 0.001 * tscale;
           t >= dur ? ( st = 0; t = 0; ) : (
@@ -464,13 +497,29 @@ function advance(target) local(n) (
 function start_env(vel, off) local(i, va) (
   i = 0;
   while (i < NSLOTS) (
-    r_start[i] = r_stage[i] == 0 ? s_floor[i] : r_val[i];
+    r_start[i] = r_stage[i] == 0 ? eff_fl(i) : r_val[i];
     r_val[i]   = r_start[i];
     r_stage[i] = 1;
     r_t[i]     = 0;
     va         = s_vel[i] * 0.01;
     r_vsc[i]   = 1 - va + va * (vel / 127);
     (slot_live(i) && engine_on) ? emit(off, i, r_start[i]);
+    i += 1;
+  );
+);
+
+// A note that follows the last key-up by less than RESTART_GAP continues the
+// line: a lane already falling holds where it is (stage 5) until the next
+// key-up, instead of swelling again. Lanes still rising or sustaining (the
+// pedal kept them going) are left to carry on as they were.
+function carry_env() local(i) (
+  i = 0;
+  while (i < NSLOTS) (
+    r_stage[i] == 4 ? (
+      r_relst[i] = r_val[i] - eff_fl(i);
+      r_stage[i] = 5;
+      r_t[i]     = 0;
+    );
     i += 1;
   );
 );
@@ -513,14 +562,21 @@ function handle_event(off, m1, m2, m3) local(st, ch) (
     (st == 0x90 && m3 > 0) ? (
       last_chan = ch;
       notes_base[m2] ? 0 : ( notes_base[m2] = 1; note_cnt += 1; );
-      (note_cnt == 1 || retrig_mode || env_idle()) ? start_env(m3, off);
+      (note_cnt == 1 || retrig_mode || env_idle()) ? (
+        // Legato + Gated only: Retrigger asks for a swell on every note, and
+        // One-Shot and ADR play through regardless of the keys.
+        (note_cnt == 1 && !retrig_mode && env_mode == 0 && !env_idle() &&
+         (blk_pos + off - keyup_at) < RESTART_GAP * srate) ? carry_env() : start_env(m3, off);
+      );
     ) : (st == 0x80 || (st == 0x90 && m3 == 0)) ? (
       notes_base[m2] ? ( notes_base[m2] = 0; note_cnt = max(0, note_cnt - 1); );
+      note_cnt == 0 ? ( keyup_at = blk_pos + off; );
       (note_cnt == 0 && !(pedal_hold && pedal_down)) ? release_env(0);
     ) : st == 0xB0 ? (
       m2 == 64 ? (
         pedal_down = m3 >= 64;
-        (!pedal_down && note_cnt == 0) ? release_env(0);
+        // with the pedal holding, the line ends when the pedal lifts
+        (!pedal_down && note_cnt == 0) ? ( keyup_at = blk_pos + off; release_env(0); );
       );
       (m2 == 120 || m2 == 123) ? all_notes_off();
     );
@@ -532,10 +588,10 @@ function flush_off() local(i) (
   while (i < NSLOTS) (
     r_pndoff[i] ? (
       r_pndoff[i] = 0;
-      (s_cc[i] >= 0 && s_cc[i] <= 127) ? ( r_last[i] = -1; emit(0, i, s_floor[i]); );
+      (s_cc[i] >= 0 && s_cc[i] <= 127) ? ( r_last[i] = -1; emit(0, i, eff_fl(i)); );
       r_stage[i] = 0;
       r_t[i]     = 0;
-      r_val[i]   = s_floor[i];
+      r_val[i]   = eff_fl(i);
     );
     i += 1;
   );
@@ -544,7 +600,7 @@ function flush_off() local(i) (
 function send_idle() local(i) (
   i = 0;
   while (i < NSLOTS) (
-    slot_live(i) ? ( r_last[i] = -1; emit(0, i, s_floor[i]); );
+    slot_live(i) ? ( r_last[i] = -1; emit(0, i, eff_fl(i)); );
     i += 1;
   );
 );
@@ -568,6 +624,8 @@ init_done ? 0 : (
 
 cur_pos     = 0;
 step_phase  = 0;
+blk_pos     = 0;               // samples since @init: times the gap between key-up and the next note
+keyup_at    = -1000000000;
 step_samples = max(8, floor(srate * 0.005));
 primed      = 0;
 draw_ci     = -1;
@@ -608,6 +666,7 @@ while (ei < nev) (
   ei += 1;
 );
 advance(samplesblock);
+blk_pos += samplesblock;
 
 @serialize
 
@@ -880,6 +939,7 @@ function fmtval(kind, v) (
   kind == 2 ? sprintf(#g, "%d %%",  v) :
   kind == 3 ? sprintf(#g, "%.2f",   v) :
   kind == 4 ? (v < 0 ? sprintf(#g, "—") : sprintf(#g, "CC%d", v)) :
+  kind == 5 ? (v > 0 ? sprintf(#g, "+%d", v) : v < 0 ? sprintf(#g, "−%d", -v) : sprintf(#g, "0")) :
               sprintf(#g, "%d", v);
 );
 
@@ -934,7 +994,7 @@ function tline(x1, y1, x2, y2) local(j) (
 );
 
 function draw_mini(x, y, w, h, s) local(i, n, v, fl, pk, su, px, py, lx, ly, p) (
-  fl = s_floor[s]; pk = s_peak[s]; su = s_sus[s];
+  fl = eff_fl(s); pk = eff_pk(s); su = eff_su(s);
   n = 28;
   i = 0;
   while (i <= n) (
@@ -1203,7 +1263,7 @@ setx(C_BEAT);
 gi = 1;
 while (gi < 4) ( gfx_line(cx, cy + chh * gi / 4, cx + cw, cy + chh * gi / 4); gi += 1; );
 
-fl = s_floor[sel]; pk = s_peak[sel]; su = s_sus[sel];
+fl = eff_fl(sel); pk = eff_pk(sel); su = eff_su(sel);
 ta = s_atk[sel]; td = s_dcy[sel]; tr = s_rel[sel];
 // In One-shot and ADR the hold length is known, so the canvas can draw it to
 // scale. Gated has no fixed length, so the band is just a readable placeholder.
@@ -1314,6 +1374,7 @@ plate_text("Fall", xs1 + 6 * ui_s, cy + chh - 20 * ui_s, C_LABEL2);
   pt  = pst == 1 ? min(pms, ta) :
         pst == 2 ? ta + min(pms, td) :
         pst == 3 ? ta + td + min(pms, th) :
+        pst == 5 ? ta + td + th :
                    ta + td + th + min(pms, tr);
   phx = cx + cw * clampv(pt, 0, tot) / tot;
   phy = cy + chh - clampv(r_val[sel], 0, 127) / 127 * chh;
@@ -1452,7 +1513,7 @@ cell(2, gcols, gw, gy0);
 optctl(34, cell_x, cell_y, gw, fh, "Trigger", slider4, 1) ?
   ( slider4 = fld_val; sliderchange(slider4); apply_sliders(); undo_pt = 1; );
 ctl_txt(slider4 ? "Retrigger" : "Legato", C_TEXT);
-hint("Trigger: Legato starts an arc on a phrase’s first note, Retrigger on every note.");
+hint("Trigger: Legato starts an arc after a break of 0.4 seconds, Retrigger on every note.");
 cell(3, gcols, gw, gy0);
 field(30, cell_x, cell_y, gw, fh, "Depth", slider2, 0, 200, 2, 1, 5, 1) ?
   ( slider2 = fld_val; sliderchange(slider2); apply_sliders(); undo_pt = 1; );
@@ -1461,7 +1522,11 @@ cell(4, gcols, gw, gy0);
 field(31, cell_x, cell_y, gw, fh, "Time", slider3, 10, 400, 2, 1, 5, 1) ?
   ( slider3 = fld_val; sliderchange(slider3); apply_sliders(); undo_pt = 1; );
 hint("Time: stretches or squeezes every stage, hold included.");
-y = gy0 + ceil(5 / gcols) * (fh + gap);
+cell(5, gcols, gw, gy0);
+field(41, cell_x, cell_y, gw, fh, "Dynamic", slider20, -64, 64, 5, 1, 4, 1) ?
+  ( slider20 = fld_val; sliderchange(slider20); apply_sliders(); undo_pt = 1; );
+hint("Dynamic: moves where CC1 and CC11 start, keeping the swell. Automate it to shape a phrase.");
+y = gy0 + ceil(6 / gcols) * (fh + gap);
 
 gy0 = y;
 cell(0, gcols, gw, gy0);

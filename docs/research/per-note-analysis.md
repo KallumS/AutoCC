@@ -1,7 +1,8 @@
 # Per-note CC analysis — how professionals shape a held note
 
-**Status:** analysis done (2026-10-22); presets **not changed yet** — see
-*Open decisions*. Phrase-level findings from the same data are in
+**Status:** analysis done and **adopted in AutoCC 1.3** (2026-10-22): the
+fitted presets, a Dynamic control, CC11 at the measured ratio, flat CC7, lower
+velocity scaling and the restart rule. See *Decisions*. Phrase-level findings from the same data are in
 [`phrase-shaping.md`](phrase-shaping.md), since that work is out of scope here.
 
 ## The data
@@ -186,7 +187,19 @@ The Floor values are Balfe's dynamics in Spitfire libraries. They are the
 least transferable numbers here; the swell, timing and shape are what both
 sets agree on.
 
-## Open decisions
+## Decisions (2026-10-22, all as recommended)
+
+Adopted in 1.3: (1) a **Dynamic** control (slider 20) that moves CC1 and CC11's
+start, peak and sustain while keeping the swell; (2) CC11 at the measured
+~0.87 ratio; (3) CC7 flat at 118; (4) velocity 20% on CC1 and 15% on CC11;
+(5) restart only after a 0.4 s gap (Gated + Legato).
+
+Checked after the change, with the plug-in run in ysfx: Strings at full
+velocity sends CC1/CC11 of 80/96 at note-on, 91/107 at 0.5 s, 96/112 at 1 s,
+104/119 at 2 s and 108/120 at 3 s. The measured curve is 80/96, 91/108, 96/111,
+106/121 and 108/120. Dynamic −40 sends 40/56 → 68/80, the same swell.
+
+The options as they were put:
 
 1. **Start level.** Balfe starts at the dynamic (CC1 ≈ 80); Set 2 starts near
    0. Options: take Balfe's levels; or make the start level the player's
