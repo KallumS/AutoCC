@@ -300,6 +300,23 @@ disagree:
 
 So the data doesn't place the threshold more precisely than 0.4 s.
 
+### Velocity, measured as AutoCC uses it (2026-10-22)
+
+AutoCC's Velocity setting scales the swell by `1 − v + v × velocity/127`. To
+fit `v`, each isolated note's swell (peak − note-on, notes ≥ 0.6 s) was
+divided by its track's mean swell, then regressed on velocity/127. The 21
+cues give 51 tracks and 275 notes for CC1, 53 tracks and 293 notes for CC11,
+at velocities 50–127. The 90% ranges are a bootstrap over tracks.
+
+| Lane | Fitted `v` | 90% range |
+|---|---|---|
+| CC1 | 10% | −17% to +34% |
+| CC11 | −8% | −35% to +21% |
+
+Neither differs reliably from zero. Following Balfe, Velocity is now **10% on
+CC1 and 0 on CC11** in every preset (was 20% / 15%). Velocity still reaches
+the library itself, which is where Balfe's parts use it.
+
 ## Unanswered — for Set 2 or more data
 
 - Vibrato (CC21): 270 notes in 3 cues so far (see the update above) — enough

@@ -82,8 +82,9 @@ that data says, and AutoCC now does:
 - **Notes that follow closely don't swell again.** In Legato, a note that starts
   within 0.4 seconds of the last key coming up carries on from where the lane
   is, as a player continuing a line would.
-- **Velocity barely predicts CC** in the measured parts, so it now scales the
-  swell by only 15–20%.
+- **Velocity barely changes the swell** in Balfe's parts, so it scales CC1's
+  swell by only 10% and leaves CC11 alone. Velocity still reaches the library
+  directly, as it always does.
 
 If your library treats CC11 as the main dynamics control, or you want CC11 to
 stay still, mute its lane or flatten it (set *Peak* and *Sustain* to its

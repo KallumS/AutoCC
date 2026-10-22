@@ -217,31 +217,32 @@ function setslot(s, cc, fl, pk, su, atk, dcy, rel, vel, ae, re) (
 // back. CC11 follows CC1 at ~0.84 of its range. CC7 and CC21 are levels Balfe
 // sets and leaves, so they are flat at his medians (94 and 92). Fall is not
 // measurable live (he tapers before the key lifts), so it is a plain 1 s.
-// Velocity is 15-20% because it barely predicted CC. Re-run tools/ccstudy.py
-// before changing these.
+// Velocity is 10% on CC1 and 0 on CC11: within a track his swell barely
+// grows with velocity (best fits 10% and -8%, both ranges spanning 0). Re-run
+// tools/ccstudy.py before changing these.
 function load_preset(p) (
   p == 1 ? (
     // Strings: start at 85, swell +31 over 2.2 s, hold it
-    setslot(0,  1,  85, 116, 116, 2200,    0, 1000, 20, 0.66, 1.00);
-    setslot(1, 11,  94, 118, 118, 1800,    0, 1000, 15, 0.54, 1.00);
+    setslot(0,  1,  85, 116, 116, 2200,    0, 1000, 10, 0.66, 1.00);
+    setslot(1, 11,  94, 118, 118, 1800,    0, 1000,  0, 0.54, 1.00);
     setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
     setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   ) : p == 2 ? (
     // Brass: start high, a quick +7 bloom, ease back by half
-    setslot(0,  1, 102, 109, 106, 1800,  200, 1000, 20, 0.22, 1.00);
-    setslot(1, 11,  78,  85,  82, 1800,  400, 1000, 15, 0.23, 1.00);
+    setslot(0,  1, 102, 109, 106, 1800,  200, 1000, 10, 0.22, 1.00);
+    setslot(1, 11,  78,  85,  82, 1800,  400, 1000,  0, 0.23, 1.00);
     setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
     setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   ) : p == 3 ? (
     // Woodwinds: start low, swell +17 within a second, hold it
-    setslot(0,  1,  46,  63,  63,  800,    0, 1000, 20, 0.66, 1.00);
-    setslot(1, 11,  69,  88,  84, 1200,  800, 1000, 15, 0.66, 1.00);
+    setslot(0,  1,  46,  63,  63,  800,    0, 1000, 10, 0.66, 1.00);
+    setslot(1, 11,  69,  88,  84, 1200,  800, 1000,  0, 0.66, 1.00);
     setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
     setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   ) : (
     // Default: every family together - start at 91, swell +24 over 2.6 s
-    setslot(0,  1,  91, 115, 115, 2600,    0, 1000, 20, 0.54, 1.00);
-    setslot(1, 11,  85, 104, 104, 2200,    0, 1000, 15, 0.47, 1.00);
+    setslot(0,  1,  91, 115, 115, 2600,    0, 1000, 10, 0.54, 1.00);
+    setslot(1, 11,  85, 104, 104, 2200,    0, 1000,  0, 0.47, 1.00);
     setslot(2,  7,  94,  94,  94,    0,    0,    0,  0, 1.00, 1.00);
     setslot(3, 21,  92,  92,  92,    0,    0,    0,  0, 1.00, 1.00);
   );

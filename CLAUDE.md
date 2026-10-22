@@ -182,8 +182,9 @@ Set 1 = 21 cues), not chosen by ear. Re-run `tools/ccstudy.py` /
   his medians, **94** and **92**. This replaced 1.2's late 0→25 vibrato swell,
   which no measured track did.
 - Fall is 1 s, linear, on CC1/CC11: not measurable live, because Balfe starts
-  the fade before note-off. Velocity is 20% (CC1) / 15% (CC11), because it
-  barely predicted CC (ρ 0.11 / 0.02).
+  the fade before note-off. Velocity is **10% (CC1) / 0 (CC11)**: fitted
+  within each track, Balfe's swell grows 10% (CC1) and −8% (CC11) from
+  velocity 0 to 127, both 90% ranges spanning 0.
 
 **Dynamic (slider 20, −64…+64)** shifts the Floor, Peak and Sustain of lanes 0
 and 1 (CC1, CC11) at runtime, through `eff_fl/eff_pk/eff_su`. The stored params
