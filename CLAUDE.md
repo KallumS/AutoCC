@@ -171,6 +171,9 @@ Deliberate value ranges, so lanes don't fight:
   crossfades recorded dynamic layers, changing timbre *and* level, while CC11 is
   a plain volume trim — sweeping both fully stacks two crescendos on one gesture
   and reads as exaggerated. Don't "restore" CC11's range without that in mind.
+  Measured against professional mock-ups, though, Lorne Balfe moves CC11 at
+  ~0.87 of CC1's range (correlation 0.96) — see
+  `docs/research/per-note-analysis.md`, where this is an open decision.
 - CC7 stays in an **87–95%** band (floor 110–112, peak 118–121, sustain 113–114)
   so volume is never pulled far down.
 - CC21 peaks at **20%** (25 of 127) and is shaped as a *late* gesture: long
@@ -313,6 +316,16 @@ serialized. On top of that, `sliderchange(-1)` fires once on mouse-up so REAPER'
 own project undo also captures the edit.
 
 ---
+
+### Measured reference (docs/research)
+`docs/research/per-note-analysis.md` measures how professional mock-ups shape
+CC around each held note (`tools/ccstudy.py`, `tools/ccreport.py`; needs
+`pip install mido`; the MIDI is never committed). Headline: the per-note swell
+is about **+25** over ~2.5 s with a fast-early rise (exponent 0.35–0.6),
+starting at the dynamic rather than 0, and notes that start within ~0.3 s of
+the last key-up get no swell of their own (Legato mode currently restarts on
+them). Re-run it before changing presets. Phrase-level results live in
+`phrase-shaping.md` and are out of scope for AutoCC.
 
 ## 4. Conventions when editing
 
