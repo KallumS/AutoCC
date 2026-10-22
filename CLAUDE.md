@@ -165,7 +165,8 @@ Seven. 0–3 are fixed CCs (**CC1** dynamics, **CC11** expression, **CC7** volum
 **CC21** aux/vibrato) — the CC *number* is immutable, everything else is not.
 4–6 are free user lanes (`s_cc = -1` when blank).
 
-**Lorne Balfe's practice is the reference** (the owner's rule, 2026-10-22):
+**Lorne Balfe's practice is the reference** (the owner's rule, 2026-10-22;
+decision 0002, session log `docs/sessions/2026-10-22-balfe-analysis.md`):
 where the data shows how he does something, AutoCC does it that way. Preset
 values (1.3) are **fitted to his mock-ups** (`docs/research/per-note-analysis.md`,
 Set 1 = 21 cues), not chosen by ear. Re-run `tools/ccstudy.py` /
@@ -351,6 +352,16 @@ starting at the dynamic rather than 0, and notes that start within ~0.3 s of
 the last key-up get no swell of their own. 1.3's presets (fitted to all 21
 Set 1 cues), Dynamic and the restart rule come from it. Re-run it before changing presets. Phrase-level results live in
 `phrase-shaping.md` and are out of scope for AutoCC.
+
+### Ports in other repositories
+**Noterator** and **Miderator** (KallumS) carry a C++ port of this engine,
+`Source/Core/AutoCC.cpp`, value for value: `load_preset`, `env_tick`,
+`carry_env`, `handle_event` and Dynamic (`AutoCCOptions::dynamic`), computed
+once over a whole part instead of live. They match 1.3 (their decision 0049).
+**A change to the presets or the envelope here is a change there too**: make
+it in Noterator, with a test that fails on the old code, then copy it to
+Miderator with its `tools/sync_from_noterator.sh` and record the commit in
+its `docs/SHARED.md`.
 
 ## 4. Conventions when editing
 

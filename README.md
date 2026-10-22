@@ -428,6 +428,13 @@ custom UI keeps working either way.
 * Polyphony is tracked by held-note count. In *Legato* mode the arc starts on
   the first note of a phrase and releases only when the last note (and the
   sustain pedal) is let go.
+* In *Legato* with *Gated*, a note that starts within 0.4 seconds of every key
+  coming up does not start a new arc: lanes that had begun to fall hold where
+  they are until the keys come up again. The level is held relative to the
+  floor, so *Dynamic* still moves it.
+* *Dynamic* is applied as the envelope runs, not stored in the lanes: the
+  *Floor*, *Peak* and *Sustain* fields keep the preset's values, and the
+  canvas and the playhead show the shifted ones.
 * A retrigger always starts from the *current* value, never from the floor, so
   repeated notes never produce a click or a dip.
 * `CC120` (all sound off) and `CC123` (all notes off) reset the note state.
@@ -440,6 +447,14 @@ custom UI keeps working either way.
   curve tables — 639 words, held in two 32-entry ring buffers. Restoring one
   pushes the lane enables back out to their sliders so the GUI, the sliders and
   the engine cannot drift apart.
+
+---
+
+## Used elsewhere
+
+Noterator and Miderator (KallumS) compute AutoCC's curves for a whole part
+with a C++ port of this engine, so playback and exported MIDI in those apps
+match what AutoCC plays live in REAPER. They are kept to the same presets.
 
 ---
 
