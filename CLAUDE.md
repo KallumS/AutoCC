@@ -165,20 +165,37 @@ Seven. 0–3 are fixed CCs (**CC1** dynamics, **CC11** expression, **CC7** volum
 **CC21** aux/vibrato) — the CC *number* is immutable, everything else is not.
 4–6 are free user lanes (`s_cc = -1` when blank).
 
-Deliberate value ranges, so lanes don't fight:
-- CC11's excursion is **half of CC1's** (~35 points against ~95), anchored at
-  the peak so the floor rises rather than the top dropping. Reason: CC1
-  crossfades recorded dynamic layers, changing timbre *and* level, while CC11 is
-  a plain volume trim — sweeping both fully stacks two crescendos on one gesture
-  and reads as exaggerated. Don't "restore" CC11's range without that in mind.
-- CC7 stays in an **87–95%** band (floor 110–112, peak 118–121, sustain 113–114)
-  so volume is never pulled far down.
-- CC21 peaks at **20%** (25 of 127) and is shaped as a *late* gesture: long
-  heavily-curved rise, no settle stage, short fall. Note length therefore decides
-  vibrato depth on its own.
+**Lorne Balfe's practice is the reference** (the owner's rule, 2026-10-22;
+decision 0002, session log `docs/sessions/2026-10-22-balfe-analysis.md`):
+where the data shows how he does something, AutoCC does it that way. Preset
+values (1.3) are **fitted to his mock-ups** (`docs/research/per-note-analysis.md`,
+Set 1 = 21 cues), not chosen by ear. Re-run `tools/ccstudy.py` /
+`tools/ccreport.py` and re-fit before changing them.
+- CC1 starts at the **dynamic** (Strings 85, Brass 102, Woodwinds 46, Default
+  91) and swells with a fast-early rise (Rise Shape 0.22–0.66): strings +31,
+  woodwinds +17, brass +7 then easing back. In his cues the start level
+  follows the piece more than the instrument, which is what Dynamic is for.
+- CC11 follows CC1 at **~0.84 of its swell**. This replaced 1.2's "half of
+  CC1" rule (decided 2026-10-22: correlation 0.97, range ratio 0.84). The
+  two-crescendo worry is the user's to manage by muting or flattening the lane.
+- CC7 and CC21 are **held levels** (floor = peak = sustain, zero times): Balfe
+  sets each per track and leaves it (85% and 78% of notes flat). The levels are
+  his medians, **94** and **92**. This replaced 1.2's late 0→25 vibrato swell,
+  which no measured track did.
+- Fall is 1 s, linear, on CC1/CC11: not measurable live, because Balfe starts
+  the fade before note-off. Velocity is **10% (CC1) / 0 (CC11)**: fitted
+  within each track, Balfe's swell grows 10% (CC1) and −8% (CC11) from
+  velocity 0 to 127, both 90% ranges spanning 0.
+
+**Dynamic (slider 20, −64…+64)** shifts the Floor, Peak and Sustain of lanes 0
+and 1 (CC1, CC11) at runtime, through `eff_fl/eff_pk/eff_su`. The stored params
+are untouched. Every runtime and drawing use of a level must go through those
+helpers, or the canvas, the playhead and the sent value disagree. The swell
+keeps its size and is clamped at 0 and 127.
 
 ### Envelope
-Stages `0 idle → 1 attack → 2 settle → 3 sustain → 4 release`. A stage with
+Stages `0 idle → 1 attack → 2 settle → 3 sustain → 4 release`, plus **5
+carry**. A stage with
 duration 0 falls straight through (`t >= dur` is true at `t > 0`), which is why
 the stage loop terminates — don't "fix" that by special-casing zero.
 
@@ -187,6 +204,18 @@ the stage loop terminates — don't "fix" that by special-casing zero.
 - **1 One-shot** — stage 3 holds for `hold_ms` (slider 19, scaled by `tscale`)
   and then releases itself.
 - **2 ADR** — stage 2 goes straight to stage 4, so stage 3 is never entered.
+
+**Restart rule (1.3):** in Gated + Legato, a first key down less than
+`RESTART_GAP` (0.4 s, unscaled) after every key went up calls `carry_env()`
+instead of `start_env()`. Lanes in stage 4 move to stage 5 and hold their
+level, stored in `r_relst` *relative to the floor* so Dynamic still moves it,
+until the next key-up releases them. Lanes still in stages 1–3 (the pedal kept
+them going) carry on untouched. This comes from the measured parts: notes that
+start within ~0.3–0.6 s of the last key-up get no swell of their own. Stage 5
+falls to stage 4 by itself if the mode leaves Gated. `keyup_at` / `blk_pos`
+time the gap in samples, and the pedal-up release also sets `keyup_at`.
+Verified in Python and in ysfx: the rule switches between 0.35 and 0.45 s, and
+Retrigger is unaffected.
 
 In modes 1 and 2 `release_env(force)` no-ops unless `force` is set, which only
 panic does; note-off and the sustain pedal are deliberately inert there. The
@@ -265,10 +294,10 @@ rather than act, and for the edge of a field that is off. The canvas grid
 `AutoCC.jsfx`, so regenerate it rather than hand-editing if the scheme changes.
 
 ### The UI is the only surface
-All 19 sliders are declared with a `-` prefix, which hides the standard slider
+All 20 sliders are declared with a `-` prefix, which hides the standard slider
 panel while keeping each parameter live and automatable. That means **every
 parameter must have a control in `@gfx`** — adding a slider without one makes it
-unreachable. The Global strip covers sliders 2–10 and 18–19 in two groups
+unreachable. The Global strip covers sliders 2–10 and 18–20 in two groups
 (envelope, then MIDI routing), the preset buttons cover slider 1, and the lane
 list's boxes cover 11–17 (through `set_en()`).
 
@@ -313,6 +342,26 @@ serialized. On top of that, `sliderchange(-1)` fires once on mouse-up so REAPER'
 own project undo also captures the edit.
 
 ---
+
+### Measured reference (docs/research)
+`docs/research/per-note-analysis.md` measures how professional mock-ups shape
+CC around each held note (`tools/ccstudy.py`, `tools/ccreport.py`; needs
+`pip install mido`; the MIDI is never committed). Headline: the per-note swell
+is about **+25** over ~2.5 s with a fast-early rise (exponent 0.35–0.6),
+starting at the dynamic rather than 0, and notes that start within ~0.3 s of
+the last key-up get no swell of their own. 1.3's presets (fitted to all 21
+Set 1 cues), Dynamic and the restart rule come from it. Re-run it before changing presets. Phrase-level results live in
+`phrase-shaping.md` and are out of scope for AutoCC.
+
+### Ports in other repositories
+**Noterator** and **Miderator** (KallumS) carry a C++ port of this engine,
+`Source/Core/AutoCC.cpp`, value for value: `load_preset`, `env_tick`,
+`carry_env`, `handle_event` and Dynamic (`AutoCCOptions::dynamic`), computed
+once over a whole part instead of live. They match 1.3 (their decision 0049).
+**A change to the presets or the envelope here is a change there too**: make
+it in Noterator, with a test that fails on the old code, then copy it to
+Miderator with its `tools/sync_from_noterator.sh` and record the commit in
+its `docs/SHARED.md`.
 
 ## 4. Conventions when editing
 

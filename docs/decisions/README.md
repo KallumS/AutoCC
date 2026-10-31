@@ -12,3 +12,4 @@ Decisions made before this folder existed are explained in `CLAUDE.md` itself.
 | | | |
 | --- | --- | --- |
 | [0001](0001-apples-hig-foundations.md) | Apple's HIG Foundations are the standard for the window | Accepted |
+| [0002](0002-lorne-balfe-is-the-reference.md) | Lorne Balfe's mock-ups are the reference for AutoCC's curves | Accepted |

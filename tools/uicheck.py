@@ -369,7 +369,7 @@ NAMES = {110: "Options", 113: "Dismiss", 101: "Default", 102: "Strings", 103: "B
          5: "Rise", 6: "Settle", 7: "Fall", 8: "Rise Shape", 9: "Fall Shape", 111: "Undo", 112: "Redo",
          120: "Reset Curves", 121: "Copy Shape to All", 122: "Clear Lane", 33: "Mode", 39: "Hold",
          34: "Trigger", 30: "Depth", 31: "Time", 35: "MIDI In", 36: "CC Out", 37: "Pedal",
-         38: "MIDI Thru", 32: "Rate", 40: "Engine"}
+         38: "MIDI Thru", 32: "Rate", 40: "Engine", 41: "Dynamic"}
 for _i in range(7):
     NAMES[200 + _i] = "lane %d on/off" % (_i + 1)
     NAMES[210 + _i] = "lane %d" % (_i + 1)
@@ -383,13 +383,13 @@ LANES = []
 for _i in range(7):
     LANES += [NAMES[200 + _i], NAMES[210 + _i]]
 FIELDS = ["Floor", "Peak", "Sustain", "Velocity", "Rise", "Settle", "Fall", "Rise Shape", "Fall Shape"]
-GLOBAL_A = ["Mode", "Trigger", "Depth", "Time"]
+GLOBAL_A = ["Mode", "Trigger", "Depth", "Time", "Dynamic"]
 GLOBAL_B = ["MIDI In", "CC Out", "Pedal", "MIDI Thru", "Rate", "Engine"]
 ORDER_FRESH = (["Options", "Default", "Strings", "Brass", "Woodwinds", "Panic / Reset"] + LANES + FIELDS +
                ["Reset Curves", "Copy Shape to All"] + GLOBAL_A + GLOBAL_B)
 ORDER_USER = (["Dismiss", "Options", "Default", "Strings", "Brass", "Woodwinds", "Panic / Reset"] + LANES +
               ["CC Number"] + FIELDS + ["Undo", "Reset Curves", "Copy Shape to All", "Clear Lane"] +
-              ["Mode", "Hold", "Trigger", "Depth", "Time"] + GLOBAL_B)
+              ["Mode", "Hold", "Trigger", "Depth", "Time", "Dynamic"] + GLOBAL_B)
 
 
 # ---------------------------------------------------------------- window rules

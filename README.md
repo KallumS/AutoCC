@@ -47,57 +47,48 @@ Their CC numbers cannot be changed. Everything else about them can.
 
 Each lane sits in its own value range so they don't fight each other:
 
-| Lane | Floor | Peak | Sustain | Range across all presets |
-|------|-------|------|---------|--------------------------|
-| CC1  | 0     | 100–112 | 87–92 | full sweep, 0% up to ~88% |
-| CC11 | 60–70 | 100–110 | 97–104 | **~35 point travel** — half of CC1's |
-| CC7  | 110–112 | 118–121 | 113–114 | **stays in an 87–95% band** so volume never drops far |
-| CC21 | 0     | 25      | 25    | **peaks at 20%** — deliberately minimal |
+| Lane | Floor | Peak | Sustain | Across the presets |
+|------|-------|------|---------|--------------------|
+| CC1  | 46–102 | 63–116 | 63–116 | starts at the dynamic, swells +7 to +31 |
+| CC11 | 69–94 | 85–118 | 82–118 | follows CC1 at ~0.84 of its swell |
+| CC7  | 94    | 94      | 94    | **held** — a level, not a gesture |
+| CC21 | 92    | 92      | 92    | **held** — a level, not a gesture |
 
-CC7 only breathes by a few values around 90% — enough to add body on a swell
-without ever pulling the level down. CC21 is capped low because it usually
-drives vibrato or tightness, where a high value is rarely wanted.
+CC7 and CC21 hold still. In the mock-ups AutoCC's presets are measured from,
+Lorne Balfe sets each one as a level per track and leaves it: 85% of notes see
+no CC7 movement, and 78% none on CC21. The presets use his median levels, 94
+for CC7 and 92 for CC21. Set them to whatever your library wants; if your
+library uses CC21 for something other than vibrato, turn the lane off.
 
-**Why CC11 moves so much less than CC1.** In most libraries CC1 crossfades
-between recorded dynamic layers, so it changes timbre *and* loudness — a
-crescendo on CC1 sounds like a player pushing harder. CC11 is a plain volume
-trim. If both swept the full range together you would get two crescendos
-stacked on one gesture, and the result reads as exaggerated. So CC11's
-excursion is half of CC1's, anchored at the top: the loud end stays where it
-is and the resting floor comes up, which also stops CC11 attenuating quiet
-passages. Measured on a held note at velocity 100, CC1 travels ~95 points and
-CC11 travels ~35.
+### Where the numbers come from
 
-If your library treats CC11 as the primary dynamics control (a few do), raise
-its peak and drop its floor to taste — or mute CC1's lane and let CC11 carry
-the arc.
+The presets are fitted to Lorne Balfe's own mock-ups, which AutoCC treats as
+the reference: 21 cues, almost all in Spitfire libraries, with 17 mock-ups of
+other scores as a cross-check (`docs/research/per-note-analysis.md`). The
+envelope matches his average held note to within one or two CC steps. What
+that data says, and AutoCC now does:
 
-### CC21 builds late, then drops away
+- **A note starts at the dynamic, not at zero.** Strings start CC1 at 85,
+  brass at 102, woodwinds at 46. How loud the piece is matters more than the
+  instrument: brass CC11 starts at 109–125 in his action themes and 45–60 in
+  quiet *His Dark Materials* cues. **Dynamic** in the Global strip moves that
+  starting level for CC1 and CC11 together, keeping the swell the same size.
+  Turn it down for a quiet passage, or automate it to shape a phrase.
+- **The swell is fast early:** strings +31 over about 2 seconds, woodwinds
+  +17 within a second, both held for as long as the note is. Brass blooms by
+  about +7 almost at once, then eases back.
+- **CC11 follows CC1.** On the same notes the two correlate 0.97, with CC11
+  moving about 0.84 as far as CC1.
+- **Notes that follow closely don't swell again.** In Legato, a note that starts
+  within 0.4 seconds of the last key coming up carries on from where the lane
+  is, as a player continuing a line would.
+- **Velocity barely changes the swell** in Balfe's parts, so it scales CC1's
+  swell by only 10% and leaves CC11 alone. Velocity still reaches the library
+  directly, as it always does.
 
-Vibrato is mostly a late-note gesture, so CC21 is shaped differently from the
-other lanes: a long, heavily curved rise that stays near zero for most of its
-attack, no settle stage (it holds at the top once it arrives), and a very short
-fall.
-
-| Preset | 50% of peak at | 90% of peak at | Back to 10% after note-off |
-|--------|----------------|----------------|-----------------------------|
-| Strings   | 1405 ms | 1730 ms | 140 ms |
-| Brass     |  685 ms |  860 ms | 115 ms |
-| Woodwinds |  610 ms |  765 ms | 100 ms |
-| Default   |  840 ms | 1055 ms | 125 ms |
-
-The practical effect is that note length decides how much vibrato you get,
-without you doing anything:
-
-| Held note (Strings) | CC21 reaches |
-|---------------------|--------------|
-| 250 ms  | 0.1%  |
-| 500 ms  | 0.5%  |
-| 1000 ms | 3.8%  |
-| 2000 ms | 20% (full) |
-
-Short runs stay dry, long notes bloom into vibrato near the end, and it clears
-almost immediately on release.
+If your library treats CC11 as the main dynamics control, or you want CC11 to
+stay still, mute its lane or flatten it (set *Peak* and *Sustain* to its
+*Floor*).
 
 Plus three **free lanes** (5–7). Pick any CC number `0–127` and draw whatever
 curve you want. They start blank.
@@ -134,10 +125,9 @@ from Strings to Brass will never turn a lane back on behind your back.
 
 * **Rise** — from the current value up to *peak*, following the rise curve.
 * **Settle** — peak eases down to the *sustain* level (the natural post-attack
-  settle of a real bow/breath). Measured at velocity 100, the drop is about 12
-  points on Strings CC1, 18 on Brass and 14 on Woodwinds — the bloom is
-  deliberately obvious. Shrink *Sustain*'s distance from *Peak* if you want it
-  subtler.
+  settle of a real breath). Measured at velocity 100, the drop is about 3
+  points on Brass CC1 and CC11 and 4 on Woodwinds CC11. Strings don't settle:
+  the measured string parts keep their swell for as long as the note is held.
 * **Sustain** — holds while the note is held.
 * **Fall** — on note-off, drops from wherever it is back to *floor*, following
   the fall curve.
@@ -167,14 +157,14 @@ fall. Note that this is still a *three*-stage fall shape, not a decay to zero �
 there to the floor, each with its own curve. Total length is *Rise* + *Settle* +
 *Fall* and nothing else affects it.
 
-Measured on Strings CC1 (rise 900, settle 400, fall 1100) with the key touched
-for only 200 ms:
+Measured on Strings CC1 (start 85, rise 2200, settle 0, fall 1000, Hold 800)
+with the key touched for only 200 ms:
 
 | Mode | What happens |
 |------|--------------|
-| Gated | fall starts at 200 ms, CC1 peaks at **5** — the arc never got going |
-| One-Shot | full arc, peaks at **102**, finishes at 3200 ms |
-| ADR | full arc, peaks at **102**, finishes at 2400 ms |
+| Gated | fall starts at 200 ms, CC1 peaks at **91** — six points into the swell |
+| One-Shot | full arc, peaks at **116**, finishes at 4000 ms |
+| ADR | full arc, peaks at **116**, finishes at 3200 ms |
 
 In One-Shot and ADR the sustain pedal does nothing, since there is no note-off
 to defer. The canvas draws the hold band to scale in these modes, so what you
@@ -184,6 +174,14 @@ One refinement worth knowing: in Legato trigger mode a new note normally will
 not restart an arc already in progress — but once a one-shot has finished, the
 next note *does* start a fresh one. Otherwise a finished shot could never fire
 again while a key was still down.
+
+In Gated mode with Legato, a note that starts **within 0.4 seconds** of every
+key coming up doesn't start a new rise either: the lane stops falling and holds
+where it is until the keys come up again. That is how the measured
+professional parts treat a line played with small gaps, and roughly nine
+notes in ten in Balfe's mock-ups started that soon after the last. After a
+longer break the next note swells as usual. Retrigger mode still restarts
+on every note.
 
 ### Per-lane parameters
 
@@ -259,15 +257,17 @@ Drawing is available on **all** lanes, fixed and free alike.
 
 ## Instrument presets
 
-| Preset        | Behaviour                                                        |
-|---------------|------------------------------------------------------------------|
-| **Default**   | Neutral, moderate rise and fall — a sane starting point           |
-| **Strings**   | Slow swelling rise (~900 ms to peak), settled sustain, long gentle fall (~1.1 s) |
-| **Brass**     | Fast attack with a bloom above sustain (~130 ms), firm sustain, moderate fall (~420 ms) |
-| **Woodwinds** | Quick speech-like attack (~150 ms), steady sustain, quick fall (~220 ms) |
+| Preset        | CC1: start → peak, rise | Character |
+|---------------|-------------------------|-----------|
+| **Default**   | 91 → 115 over 2.6 s | Every family together; steady swell, held |
+| **Strings**   | 85 → 116 over 2.2 s | Fast off the mark, keeps swelling, holds it |
+| **Brass**     | 102 → 109 over 1.8 s, settles to 106 | Starts loud, near-instant bloom, eases back |
+| **Woodwinds** | 46 → 63 over 0.8 s | Starts soft, quick swell, holds it |
 
-CC21 follows the same family character but on its own much longer timescale —
-see *CC21 builds late* above.
+Every preset falls back over 1 second when the keys come up: Balfe starts his
+fade *before* the note ends, which a plug-in playing live can't see coming.
+
+CC7 (94) and CC21 (92) are held levels in every preset.
 
 Preset buttons only rewrite the four fixed lanes, so custom lanes you have
 built survive while you audition instruments.
@@ -370,8 +370,9 @@ re-tinting the scheme is a one-value change.
 
 ## Global controls
 
-The **Global** strip under the lane's fields. *Depth*, *Time* and *Rate*
-are drag fields like the lane parameters; the other six are click-through
+The **Global** strip under the lane's fields. *Hold*, *Depth*, *Time*,
+*Dynamic* and *Rate* are drag fields like the lane parameters; the other seven
+are click-through
 settings — **left-click advances, right-click steps back** (from the keyboard:
 Return advances, the arrow keys go either way).
 
@@ -381,9 +382,10 @@ Return advances, the arrow keys go either way).
 |------------|--------|-----------------------------------------------------|
 | *Mode*     | 18     | Gated / One-Shot / ADR — see below                   |
 | *Hold*     | 19     | One-Shot’s sustain length (greyed out in the other modes) |
-| *Trigger*  | 4      | *Legato*: only the first note of a phrase starts a new rise. *Retrigger*: every note-on restarts it (from the current value — no jumps) |
+| *Trigger*  | 4      | *Legato*: a new rise starts only after a break of 0.4 s or more (Gated). *Retrigger*: every note-on restarts it (from the current value — no jumps) |
 | *Depth*    | 2      | Scales all CC movement around each lane's floor      |
 | *Time*     | 3      | Stretches or compresses every stage, hold included   |
+| *Dynamic*  | 20     | Moves where CC1 and CC11 start, peak and sustain (−64 to +64), keeping the swell. Automate it to shape phrases |
 
 **Row 2 — MIDI routing and output**
 
@@ -402,7 +404,7 @@ Instrument preset is slider 1 (the preset buttons); lane on/off is sliders
 ### Why there are no slider rows above the UI
 
 Every parameter is reachable from the custom interface, so the standard JSFX
-slider panel would only duplicate it — seventeen rows of it. All seventeen are
+slider panel would only duplicate it — twenty rows of it. All twenty are
 therefore declared with a `-` prefix on the description, which hides the row
 while leaving the parameter live, saved with the project and **automatable from
 the track's envelope lanes** as normal (use the FX window's *Param* button to
@@ -426,6 +428,13 @@ custom UI keeps working either way.
 * Polyphony is tracked by held-note count. In *Legato* mode the arc starts on
   the first note of a phrase and releases only when the last note (and the
   sustain pedal) is let go.
+* In *Legato* with *Gated*, a note that starts within 0.4 seconds of every key
+  coming up does not start a new arc: lanes that had begun to fall hold where
+  they are until the keys come up again. The level is held relative to the
+  floor, so *Dynamic* still moves it.
+* *Dynamic* is applied as the envelope runs, not stored in the lanes: the
+  *Floor*, *Peak* and *Sustain* fields keep the preset's values, and the
+  canvas and the playhead show the shifted ones.
 * A retrigger always starts from the *current* value, never from the floor, so
   repeated notes never produce a click or a dip.
 * `CC120` (all sound off) and `CC123` (all notes off) reset the note state.
@@ -438,6 +447,14 @@ custom UI keeps working either way.
   curve tables — 639 words, held in two 32-entry ring buffers. Restoring one
   pushes the lane enables back out to their sliders so the GUI, the sliders and
   the engine cannot drift apart.
+
+---
+
+## Used elsewhere
+
+Noterator and Miderator (KallumS) compute AutoCC's curves for a whole part
+with a C++ port of this engine, so playback and exported MIDI in those apps
+match what AutoCC plays live in REAPER. They are kept to the same presets.
 
 ---
 
