@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ReaPack index for AutoCC.
+
+  Add this repository in REAPER with Extensions > ReaPack > Import repositories,
+  pasting the raw URL of this file on the default branch:
+
+    https://raw.githubusercontent.com/KallumS/AutoCC/main/index.xml
+
+  That URL only resolves once this file is on the default branch.
+
+  Each <source> is pinned to a commit rather than a branch, so an installed
+  version is the exact set of files that was tested and cannot change
+  underneath anyone. Publishing a new version means adding a <version> block
+  with a fresh commit hash - never editing an existing one.
+
+  One package: the JSFX.
+
+  ReaPack keys an installed package by its NAME, so renaming a file is not an
+  upgrade. Rename sparingly.
+-->
+<index version="1" name="AutoCC">
+  <category name="MIDI">
+
+    <reapack name="AutoCC.jsfx" type="effect" desc="AutoCC">
+      <version name="1.3" author="kallums" time="2026-10-31T23:22:08Z">
+        <changelog><![CDATA[First release through ReaPack. Plays your CC curves for you: play a note and it draws the arc - a rise, a sustain and a fall - across up to seven CC lanes at once, shaped like the real instrument family, so orchestral libraries can be played with both hands on the keys.]]></changelog>
+        <source main="main">https://raw.githubusercontent.com/KallumS/AutoCC/df76ac44555539ee4aa2ced6bdb0f1d969ed037a/AutoCC.jsfx</source>
+      </version>
+      <metadata>
+        <description><![CDATA[{\pard AutoCC\par
+A JSFX that watches incoming MIDI notes and draws orchestral controller curves automatically, across up to seven CC lanes at once.\par
+Put it before your sample library in the FX chain, so the library receives the CCs it makes.\par
+}]]></description>
+        <link rel="website">https://github.com/KallumS/AutoCC</link>
+      </metadata>
+    </reapack>
+
+  </category>
+</index>
