@@ -14,6 +14,14 @@ of riding a mod wheel with one hand and playing with the other.
 
 ## Install
 
+**With ReaPack** (easiest, and it keeps it up to date): Extensions ->
+ReaPack -> Import repositories, paste
+`https://raw.githubusercontent.com/KallumS/AutoCC/main/index.xml`,
+then Browse packages, find AutoCC and Install. That link only works
+once this has been merged into the main branch.
+
+**By hand:**
+
 1. Copy `AutoCC.jsfx` into your REAPER resource folder under `Effects/`
    (REAPER → *Options → Show REAPER resource path…* → `Effects/`).
    A subfolder like `Effects/AutoCC/` is fine.
