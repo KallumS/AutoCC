@@ -12,6 +12,8 @@ of riding a mod wheel with one hand and playing with the other.
 
 ---
 
+**In Ableton Live:** `ableton/` has AutoCC as a Max for Live MIDI effect. See [`ableton/README.md`](ableton/README.md).
+
 ## Install
 
 **With ReaPack** (easiest, and it keeps it up to date): Extensions ->

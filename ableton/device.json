@@ -1,0 +1,21 @@
+{
+  "name": "AutoCC",
+  "slug": "AutoCC",
+  "kind": "midi",
+  "template": "jsfx_midi",
+  "width": 260,
+  "hello": "Show Window opens AutoCC's own window.",
+  "device": {
+    "main": "AutoCC.jsfx"
+  },
+  "files": {
+    "AutoCC.jsfx": "../AutoCC.jsfx"
+  },
+  "buttons": [],
+  "scripts": [
+    "kit/runtime/jsfx.js",
+    "kit/gfx.js",
+    "kit/live.js",
+    "kit/jsfx_device.js"
+  ]
+}
