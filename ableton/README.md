@@ -31,7 +31,7 @@ Everything AutoCC saves in REAPER (its @serialize) is saved with the Live set.
 ableton/device.json` writes the `.amxd`, the `.maxpat` and the script bundle
 `AutoCC.js`. The bundle is Middaw's EEL2 runtime, `AutoCC.jsfx` from the repository root, and the shared window (`ableton/kit/jsfx_device.js`, `gfx.js`). See `ableton/kit/VENDORED.md`.
 
-`node --test ableton/tests/test_device.js` runs the device on a pretend Max and Live: the window draws and answers clicks all over it, notes go through and end, a held note plays a rising and falling arc, Tab moves the focus, and the state is saved only when it changes and comes back. `node ableton/kit/test/shot.js ableton/AutoCC.js 820 730 out.png` draws the window to a picture.
+`node --test ableton/tests/test_device.js` runs the device on a pretend Max and Live: the window draws and answers clicks all over it, notes go through and end, a held note plays a rising and falling arc, Tab moves the focus, and the state is saved only when it changes and comes back. `node ableton/kit/test/shot.js ableton/AutoCC.js 820 730 out.png` draws the window to a picture. `node ableton/window.js` redraws the picture above from the device's own drawing code (it needs Playwright's Chromium).
 
 ## Limits
 
