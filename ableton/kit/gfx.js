@@ -115,9 +115,11 @@ var Gfx = (function () {
   Host.prototype.gfx_getfont = function () { return this.font; };
   Host.prototype.applyFont = function () {
     var f = this.fonts[this.font] || this.fonts[0], fl = f.flags;
+    // REAPER's names for the system face are not names Max can ask for
+    var face = /^\./.test(f.name) || /^segoe/i.test(f.name) ? 'Arial' : f.name;
     var bold = fl === 98 || ((fl >> 8) & 255) === 98 || ((fl >> 16) & 255) === 98;
     var italic = fl === 105 || ((fl >> 8) & 255) === 105 || ((fl >> 16) & 255) === 105;
-    this.g.select_font_face(f.name, italic ? 'italic' : 'normal', bold ? 'bold' : 'normal');
+    this.g.select_font_face(face, italic ? 'italic' : 'normal', bold ? 'bold' : 'normal');
     this.g.set_font_size(f.size);
     this.size = f.size;
     if (this.slots) this.set('texth', Math.round(f.size));

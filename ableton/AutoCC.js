@@ -1281,9 +1281,11 @@ var Gfx = (function () {
   Host.prototype.gfx_getfont = function () { return this.font; };
   Host.prototype.applyFont = function () {
     var f = this.fonts[this.font] || this.fonts[0], fl = f.flags;
+    // REAPER's names for the system face are not names Max can ask for
+    var face = /^\./.test(f.name) || /^segoe/i.test(f.name) ? 'Arial' : f.name;
     var bold = fl === 98 || ((fl >> 8) & 255) === 98 || ((fl >> 16) & 255) === 98;
     var italic = fl === 105 || ((fl >> 8) & 255) === 105 || ((fl >> 16) & 255) === 105;
-    this.g.select_font_face(f.name, italic ? 'italic' : 'normal', bold ? 'bold' : 'normal');
+    this.g.select_font_face(face, italic ? 'italic' : 'normal', bold ? 'bold' : 'normal');
     this.g.set_font_size(f.size);
     this.size = f.size;
     if (this.slots) this.set('texth', Math.round(f.size));
@@ -1675,13 +1677,21 @@ var Live = (function () {
  *
  * Expects, before it: Gfx, Live, MiddawJSFX, and DEVICE = { main, files,
  * actions? }. A device's own buttons (Load Clip, Insert the Take) are in
- * ACTIONS, defined in the repository's ableton/actions.js.
+ * ACTIONS, defined in the repository's ableton/actions.js, which shares this
+ * file's global scope: its own functions must not reuse a name defined here
+ * (send, say, load, tick...), or this file's takes its place.
  * Inlet 0: bang (Live is ready), MIDI bytes, restore, and the strip's
  * commands. Outlets: 0 MIDI bytes, 1 the saved state to [pattr], 2 the
  * strip's status line.
+ *
+ * DEVICE.audio: the sound is gen~'s (ableton/kit/jsfx2gen.js), not this
+ * file's. The plug-in here runs @init, @slider and @gfx only, for its window;
+ * what its sliders say goes to gen~ (outlet 3, "sliderN value"), with Live's
+ * tempo and transport, and MIDI goes to gen~ through the buffer~ the patcher
+ * names in "mqname" (three values a message, the count at 0).
  */
 inlets = 1;
-outlets = 3;
+outlets = DEVICE.audio ? (DEVICE.drops ? 5 : 4) : 3;
 mgraphics.init();
 mgraphics.relative_coords = 0;
 mgraphics.autofill = 0;
@@ -1731,7 +1741,43 @@ function readSong() {
     D.song = { tempo: s.tempo, num: s.num, den: s.den, playing: s.playing, position: s.position };
   } catch (e) { /* outside Live */ }
 }
+// ------------------------------------------------------------ gen~ ----
+var GEN = { sent: {}, mq: null, written: 0, CAP: 256, every: 0 };
+function mqname(name) {
+  try { GEN.mq = new Buffer(String(name)); } catch (e) { GEN.mq = null; }
+}
+function toGen() {
+  fx.file.sliders.forEach(function (sl) {
+    var v = fx.sliderByIndex(sl.index);
+    if (GEN.sent[sl.index] !== v) { GEN.sent[sl.index] = v; outlet(3, 'slider' + sl.index, v); }
+  });
+  (DEVICE.fromWindow || []).forEach(function (n) {
+    var v = fx.getVar(n);
+    if (GEN.sent['w_' + n] !== v) { GEN.sent['w_' + n] = v; outlet(3, 'w_' + n, v); }
+  });
+  if ((GEN.every++ % 12) === 0) {
+    outlet(3, 'tempo', D.song.tempo); outlet(3, 'play_state', D.song.playing ? 1 : 0);
+    outlet(3, 'beat_position', D.song.playing ? D.song.position : D.beat);
+    outlet(3, 'ts_num', D.song.num); outlet(3, 'ts_denom', D.song.den);
+  }
+}
+function midiToGen(data) {
+  if (!GEN.mq) return;
+  var at = 1 + 3 * (GEN.written % GEN.CAP);
+  GEN.mq.poke(1, at, [data[0], data[1], data[2]]);
+  GEN.written++;
+  GEN.mq.poke(1, 0, GEN.written);
+}
+
 function tick() {
+  if (DEVICE.audio) {
+    if ((D.frames++ & 63) === 0) readSong();
+    if (D.midiIn.length) { D.midiIn.forEach(midiToGen); D.midiIn = []; }
+    if ((D.frames % 5) === 0) toGen();
+    if (ACTIONS.tick) ACTIONS.tick(fx);
+    if ((D.frames & 511) === 0) save();
+    return;
+  }
   var now = Date.now();
   var ms = Math.min(100, Math.max(0, now - D.last));
   D.last = now;
@@ -1774,7 +1820,7 @@ function restore(text) {
   load(st);
 }
 function load(st) {
-  if (st && st.v === 1 && st.fx) { fx.deserialize(st.fx); lastSaved = JSON.stringify(st); }
+  if (st && st.v === 1 && st.fx) { fx.deserialize(st.fx); fx.runSection('slider'); lastSaved = JSON.stringify(st); GEN.sent = {}; }
 }
 // The plug-in's @serialize, kept with the Live set: written when it changes,
 // so an untouched device does not mark the set as changed.
